@@ -98,6 +98,7 @@ public static class FakeGame
                 public HarmonyPatch(Type declaringType, string methodName) { }
                 public HarmonyPatch(Type declaringType, string methodName, params Type[] argumentTypes) { }
                 public HarmonyPatch(Type declaringType, MethodType methodType) { }
+                public HarmonyPatch(Type declaringType, string methodName, MethodType methodType) { }
                 public HarmonyPatch(string methodName) { }
                 public HarmonyPatch(string methodName, MethodType methodType) { }
             }
@@ -193,10 +194,13 @@ public static class FakeGame
         }
     }
 
-    public static void Compile(string assemblyName, string source, IEnumerable<MetadataReference> references, string outputPath)
+    public static void Compile(string assemblyName, string source, IEnumerable<MetadataReference> references, string outputPath) =>
+        Compile(assemblyName, new[] { source }, references, outputPath);
+
+    public static void Compile(string assemblyName, IEnumerable<string> sources, IEnumerable<MetadataReference> references, string outputPath)
     {
         var compilation = CSharpCompilation.Create(assemblyName,
-            new[] { CSharpSyntaxTree.ParseText(source) },
+            sources.Select(s => CSharpSyntaxTree.ParseText(s)),
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);

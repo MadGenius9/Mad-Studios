@@ -10,7 +10,9 @@ public static class TextDiff
     /// <summary>Produces a unified diff (like `git diff`) with the given amount of context.</summary>
     public static (string Diff, int Added, int Removed) Unified(string oldText, string newText, string oldName, string newName, int context = 3)
     {
-        var model = InlineDiffBuilder.Diff(oldText, newText, ignoreWhiteSpace: false, ignoreCase: false);
+        // A trailing newline terminates the last line; it is not an extra empty line (matches git's line counting).
+        static string Norm(string t) => t.Replace("\r\n", "\n") is var n && n.EndsWith('\n') ? n[..^1] : t.Replace("\r\n", "\n");
+        var model = InlineDiffBuilder.Diff(Norm(oldText), Norm(newText), ignoreWhiteSpace: false, ignoreCase: false);
         var lines = model.Lines;
         var added = lines.Count(l => l.Type == ChangeType.Inserted);
         var removed = lines.Count(l => l.Type == ChangeType.Deleted);
