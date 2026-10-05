@@ -168,6 +168,12 @@ public sealed class RepairService
             // Harmony targets / identifiers mentioned in the error
             foreach (var p in patchTargets)
             {
+                var patchSimple = p.PatchClass.Split('.', '+').Last();
+                if (e.Message.Contains(p.PatchClass, StringComparison.Ordinal) || (patchSimple.Length > 6 && e.Message.Contains(patchSimple, StringComparison.Ordinal)))
+                {
+                    d.Correlations.Add(new Correlation(group, p.File ?? p.PatchClass, p.Line, $"Error names Harmony patch class {p.PatchClass} (target {p.TargetDisplay})"));
+                    related = true;
+                }
                 if (p.TargetType is null) continue;
                 var simpleType = p.TargetType.Split('.', '+').Last();
                 var mentioned = e.ReferencedIdentifiers.Any(i => i.Contains(simpleType) && (p.TargetMethod is null || i.Contains(p.TargetMethod)))

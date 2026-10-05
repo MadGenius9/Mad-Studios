@@ -34,7 +34,9 @@ public sealed class DuplicateFileValidator : ValidatorBase
         }
         foreach (var (name, list) in byAsm.Where(kv => kv.Value.Count > 1))
             findings.Add(F(Severity.Warning, $"Assembly '{name}' is included {list.Count} times: {string.Join(", ", list)}.", list[0]));
-        foreach (var d in byAsm.Where(kv => kv.Key.Equals("0Harmony", StringComparison.OrdinalIgnoreCase)).SelectMany(kv => kv.Value))
+        // Only a problem when a regular mod ships Harmony alongside its own code (not the Harmony mod itself).
+        var bundlesOtherCode = byAsm.Keys.Any(k => !k.Equals("0Harmony", StringComparison.OrdinalIgnoreCase));
+        foreach (var d in byAsm.Where(kv => bundlesOtherCode && kv.Key.Equals("0Harmony", StringComparison.OrdinalIgnoreCase)).SelectMany(kv => kv.Value))
             findings.Add(F(Severity.Warning, "The mod bundles its own 0Harmony.dll. The game already ships Harmony (Mods/0_TFP_Harmony); a second copy can conflict.", d));
     }
 }

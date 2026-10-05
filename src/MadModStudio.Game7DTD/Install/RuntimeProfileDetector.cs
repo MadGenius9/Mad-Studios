@@ -45,7 +45,10 @@ public sealed class RuntimeProfileDetector
             if (tfm != null) evidence.Add($"Assembly-CSharp TargetFramework attribute: {tfm}");
         }
 
-        var description = mscorlibVer != null
+        var coreClr = File.Exists(Path.Combine(managedPath, "System.Private.CoreLib.dll"));
+        var description = coreClr
+            ? $".NET (CoreCLR-style) runtime — System.Private.CoreLib present{(mscorlibVer != null ? $", mscorlib facade {mscorlibVer}" : "")}"
+            : mscorlibVer != null
             ? $"Unity Mono-style runtime — mscorlib {mscorlibVer}{(nsVer != null ? $", netstandard {nsVer} facade" : "")}{(tfm != null ? $", game assembly built for {tfm}" : "")}"
             : nsVer != null ? $".NET Standard {nsVer} surface" : "Unknown runtime (no mscorlib.dll or netstandard.dll in Managed folder)";
         return new RuntimeProfile(description, core, mscorlibVer, nsVer, tfm, evidence);
