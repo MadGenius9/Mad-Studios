@@ -15,6 +15,7 @@
         <DataTemplate DataType="{x:Type vm:BatchScannerViewModel}"><views:BatchScannerView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:GameProfilesViewModel}"><views:GameProfilesView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}"><views:SettingsView /></DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AIModelsViewModel}"><views:AIModelsView /></DataTemplate>
         <DataTemplate DataType="{x:Type vm:ProjectViewModel}"><views:ProjectView /></DataTemplate>
     </Window.Resources>
     <Grid>
@@ -24,7 +25,7 @@
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
-            <RowDefinition Height="26" />
+            <RowDefinition Height="32" />
         </Grid.RowDefinitions>
 
         <!-- Navigation -->
@@ -57,10 +58,13 @@
 
         <!-- Status bar -->
         <Border Grid.ColumnSpan="2" Grid.Row="1" Background="{StaticResource Bg1Brush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
-            <StackPanel Orientation="Horizontal" Margin="12,0">
-                <TextBlock Text="{Binding ProfileStatus}" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,0,24,0" />
-                <TextBlock Text="{Binding AiStatus}" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
-            </StackPanel>
+            <DockPanel Margin="12,0" LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left" Text="{Binding ProfileStatus}" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,0,24,0" />
+                <TextBlock DockPanel.Dock="Left" Text="{Binding AiStatus}" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" />
+                <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding ModelChoices}" SelectedItem="{Binding DefaultModel}" Width="300" Height="24" Padding="6,2"
+                          VerticalAlignment="Center" ToolTip="Global default model. AUTO lets the Auto Model Router pick per agent and task. Projects and individual agents can override this." />
+                <TextBlock DockPanel.Dock="Right" Text="Default model" Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+            </DockPanel>
         </Border>
     </Grid>
 </Window>

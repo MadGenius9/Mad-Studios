@@ -2,7 +2,8 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MadModStudio.AI;
-using MadModStudio.AI.Engines;
+using MadModStudio.AI.Coordination;
+using MadModStudio.AI.Models;
 using MadModStudio.App.Services;
 using MadModStudio.Core.Models;
 using MadModStudio.Game7DTD.Projects;
@@ -15,18 +16,17 @@ public sealed record LogInput(string Path, string Kind)
     public string Display => $"[{Kind}] {System.IO.Path.GetFileName(Path)}";
 }
 
-/// <summary>Repair Mode: import broken mod + optional logs/working version → diagnosis → edit/AI repair → build.</summary>
+/// <summary>Repair Mode: import broken mod + optional logs/working version → diagnosis → agent team repair (in the project's Agents tab) → build.</summary>
 public sealed partial class RepairViewModel : PageViewModel
 {
     private readonly ImportWorkflow _import;
     private readonly IDialogService _dialogs;
     private readonly ProjectService _projects;
     private readonly RepairService _repair;
-    private readonly AIRepairEngine _ai;
-    private readonly IAIProvider _provider;
-    private readonly AIOptions _options;
+    private readonly IAIProviderRegistry _providers;
+    private readonly IModelCatalog _catalog;
     private readonly INavigator _nav;
-    private CancellationTokenSource? _cts;
+    private readonly List<(string Path, string Kind)> _attachedLogs = new();
 
     [ObservableProperty] private string _brokenPath = "";
     [ObservableProperty] private string _workingPath = "";
@@ -35,22 +35,21 @@ public sealed partial class RepairViewModel : PageViewModel
     [ObservableProperty] private Diagnosis? _diagnosis;
     [ObservableProperty] private LogInput? _selectedLog;
 
-    public RepairViewModel(ImportWorkflow import, IDialogService dialogs, ProjectService projects, RepairService repair, AIRepairEngine ai, IAIProvider provider, AIOptions options, INavigator nav, AppState state)
+    public RepairViewModel(ImportWorkflow import, IDialogService dialogs, ProjectService projects, RepairService repair, IAIProviderRegistry providers, IModelCatalog catalog, INavigator nav, AppState state)
     {
         _import = import;
         _dialogs = dialogs;
         _projects = projects;
         _repair = repair;
-        _ai = ai;
-        _provider = provider;
-        _options = options;
+        _providers = providers;
+        _catalog = catalog;
         _nav = nav;
         State = state;
     }
 
     public override string Title => "Repair Mod";
     public AppState State { get; }
-    public bool IsAIConfigured => _provider.IsConfigured;
+    public bool IsAIConfigured => _providers.All.Any(p => p.IsConfigured) && _catalog.Models.Any(m => m.Available);
     public ObservableCollection<LogInput> Logs { get; } = new();
     public ObservableCollection<string> DependencyMods { get; } = new();
     public ObservableCollection<string> Events { get; } = new();
@@ -78,36 +77,36 @@ public sealed partial class RepairViewModel : PageViewModel
         await _projects.SaveAsync(project);
 
         var inputs = new RepairInputs { WorkingVersionPath = string.IsNullOrWhiteSpace(WorkingPath) ? null : WorkingPath };
+        _attachedLogs.Clear();
         foreach (var l in Logs)
         {
             var copy = await _projects.AttachFileAsync(project, l.Path, "logs");
             inputs.Logs.Add((copy, l.Kind));
+            _attachedLogs.Add((copy, l.Kind));
         }
         inputs.DependencyMods.AddRange(DependencyMods);
         var progress = new Progress<string>(s => Events.Add(s));
         Project = project;
         Diagnosis = await Task.Run(() => _repair.DiagnoseAsync(project, inputs, progress));
         DiagnosisText = Diagnosis.Report;
-        StatusMessage = "Diagnosis complete. Review it, open the project to edit, or run AI Repair.";
+        StatusMessage = "Diagnosis complete. Review it, open the project to edit, or repair with the agent team.";
     });
 
     [RelayCommand]
     private Task OpenProject() => Project is null ? Task.CompletedTask : _nav.OpenProjectAsync(Project.Id);
 
+    /// <summary>Opens the project and starts the agent team on a Repair workflow (board, approvals and escalation are in the Agents tab).</summary>
     [RelayCommand]
-    private Task AIRepair() => RunAsync("AI repair in progress...", async () =>
+    private Task RepairWithAgents()
     {
-        if (Project is null) return;
-        _cts = new CancellationTokenSource();
-        var progress = new Progress<AIEvent>(e => { if (e.Kind != AIEventKind.Thinking) Events.Add($"[{e.Kind}] {e.Message}"); });
-        var project = Project;
-        var options = new RepairRequestOptions { MaxAttempts = _options.MaxAutoRepairAttempts, Diagnosis = Diagnosis };
-        var outcome = await Task.Run(() => _ai.RepairAsync(project, options, progress, _cts.Token));
-        StatusMessage = outcome.StopReason;
-        foreach (var a in outcome.Attempts)
-            Events.Add($"Attempt {a.Number}: {a.Summary} → compile {(a.CompileSucceededAfter ? "OK" : "failed")}, {a.ValidationErrorsAfter} validation error(s)");
-    });
-
-    [RelayCommand]
-    private void Cancel() => _cts?.Cancel();
+        if (Project is null) return Task.CompletedTask;
+        if (!IsAIConfigured)
+        {
+            ErrorMessage = "AI is NOT CONFIGURED (no provider with discovered models). Add a provider in Settings → AI Providers, or repair manually in the project.";
+            return Task.CompletedTask;
+        }
+        var request = "Repair this mod so it compiles and validates against the installed game." + (Diagnosis is { } d && d.Report.Length > 0 ? " Start from the diagnosis findings." : "");
+        return _nav.OpenProjectAsync(Project.Id, new AgentLaunch(request, WorkflowKind.Repair, _attachedLogs.ToList(),
+            string.IsNullOrWhiteSpace(WorkingPath) ? null : WorkingPath));
+    }
 }

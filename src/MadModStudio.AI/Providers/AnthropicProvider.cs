@@ -2,6 +2,7 @@ using System.Text.Json;
 using Anthropic;
 using Anthropic.Exceptions;
 using Anthropic.Models.Beta.Messages;
+using MadModStudio.AI.Models;
 using MadModStudio.AI.Secrets;
 using MadModStudio.Core.Security;
 using Microsoft.Extensions.Logging;
@@ -15,31 +16,60 @@ namespace MadModStudio.AI.Providers;
 /// </summary>
 public sealed class AnthropicProvider : IAIProvider
 {
-    public const string SecretName = "anthropic.apikey";
-    public const string DefaultModelId = "claude-opus-5-5";
-    private const int MaxToolResultChars = 60_000;
-
     private readonly ISecretStore _secrets;
+    private readonly ModelProfileStore _profiles;
     private readonly ILogger<AnthropicProvider> _log;
 
-    public AnthropicProvider(ISecretStore secrets, ILogger<AnthropicProvider>? log = null)
+    public AnthropicProvider(ISecretStore secrets, ModelProfileStore profiles, ILogger<AnthropicProvider>? log = null)
     {
         _secrets = secrets;
+        _profiles = profiles;
         _log = log ?? NullLogger<AnthropicProvider>.Instance;
     }
 
-    public string Id => "anthropic";
+    public static string SecretName => SecretNames.ApiKey(ProviderIds.Anthropic);
+    public string Id => ProviderIds.Anthropic;
     public string DisplayName => "Anthropic Claude";
-    public string DefaultModel => DefaultModelId;
+    public string Destination => "api.anthropic.com";
+    public ProviderConnectionStatus Status { get; private set; } = ProviderConnectionStatus.NotConfigured;
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_secrets.Get(SecretName));
+
+    public async Task<ProviderConnectionStatus> TestConnectionAsync(CancellationToken ct = default)
+    {
+        if (!IsConfigured) return Status = ProviderConnectionStatus.NotConfigured;
+        try
+        {
+            var models = await ListModelsAsync(ct).ConfigureAwait(false);
+            Status = new ProviderConnectionStatus(ConnectionState.Connected, $"Connected — {models.Count} model(s) listed", DateTimeOffset.UtcNow);
+        }
+        catch (ProviderException ex) { Status = new ProviderConnectionStatus(ConnectionState.Failed, ex.Message, DateTimeOffset.UtcNow); }
+        return Status;
+    }
+
+    public async Task<IReadOnlyList<ProviderModel>> ListModelsAsync(CancellationToken ct = default)
+    {
+        var key = _secrets.Get(SecretName);
+        if (string.IsNullOrWhiteSpace(key)) return Array.Empty<ProviderModel>();
+        var client = new AnthropicClient { ApiKey = key };
+        try
+        {
+            var page = await client.Models.List(cancellationToken: ct).ConfigureAwait(false);
+            return page.Items.Select(m => new ProviderModel(Id, m.ID, m.DisplayName, (int?)m.MaxInputTokens, (int?)m.MaxTokens)).ToList();
+        }
+        catch (AnthropicUnauthorizedException) { throw new ProviderException("Anthropic rejected the API key (401). Check it in Settings → AI Providers."); }
+        catch (AnthropicIOException ex) { throw new ProviderException($"Could not reach the Anthropic API: {SecretRedactor.Redact(ex.Message)}"); }
+        catch (AnthropicApiException ex) { throw new ProviderException($"Anthropic API error: {SecretRedactor.Redact(ex.Message)}"); }
+        catch (HttpRequestException ex) { throw new ProviderException($"Network error contacting Anthropic: {SecretRedactor.Redact(ex.Message)}"); }
+    }
 
     public async Task<AIRunResult> RunAsync(AIRunRequest request, IAIToolExecutor tools, IProgress<AIEvent>? progress = null, CancellationToken ct = default)
     {
         var apiKey = _secrets.Get(SecretName);
         if (string.IsNullOrWhiteSpace(apiKey))
-            return new AIRunResult { Error = "No Anthropic API key is configured. Add one in Settings → AI Provider." };
+            return new AIRunResult { Error = "No Anthropic API key is configured. Add one in Settings → AI Providers.", ModelUsed = request.Model };
 
-        var model = request.Model ?? DefaultModelId;
+        var model = request.Model;
+        var profile = _profiles.Match(Id, model);
         var client = new AnthropicClient { ApiKey = apiKey };
         var toolDefs = tools.Tools.Select(ToBetaTool).ToList();
         var messages = new List<BetaMessageParam> { new() { Role = Role.User, Content = request.UserMessage } };
@@ -54,22 +84,29 @@ public sealed class AnthropicProvider : IAIProvider
             BetaMessage response;
             try
             {
-                response = await client.Beta.Messages.Create(new MessageCreateParams
+                var parameters = new MessageCreateParams
                 {
                     Model = model,
                     MaxTokens = request.MaxTokens,
                     System = request.SystemPrompt,
                     Messages = messages,
                     Tools = toolDefs,
-                    OutputConfig = new BetaOutputConfig { Effort = request.Effort },
-                    // Server-side refusal fallback: a declined request is re-served by a fallback model in the same call.
-                    Betas = ["server-side-fallback-2026-06-01"],
-                    Fallbacks = new BetaFallbacksParam(new List<BetaFallbackParam> { new(Anthropic.Models.Messages.Model.ClaudeOpus4_8) }),
-                }, ct).ConfigureAwait(false);
+                };
+                if (profile?.SupportsEffort == true) parameters = parameters with { OutputConfig = new BetaOutputConfig { Effort = request.ReasoningEffort } };
+                if (profile?.RefusalFallbackModel is { Length: > 0 } fallback)
+                {
+                    // Server-side refusal fallback: a declined request is re-served by the fallback model in the same call.
+                    parameters = parameters with
+                    {
+                        Betas = ["server-side-fallback-2026-06-01"],
+                        Fallbacks = new BetaFallbacksParam(new List<BetaFallbackParam> { new(fallback) }),
+                    };
+                }
+                response = await client.Beta.Messages.Create(parameters, ct).ConfigureAwait(false);
             }
             catch (AnthropicUnauthorizedException)
             {
-                return Fail("The Anthropic API key was rejected (401). Check the key in Settings.", usage, toolCalls, model);
+                return Fail("The Anthropic API key was rejected (401). Check the key in Settings → AI Providers.", usage, toolCalls, model);
             }
             catch (AnthropicRateLimitException)
             {
@@ -144,15 +181,15 @@ public sealed class AnthropicProvider : IAIProvider
                     assistant.Add(new BetaToolUseBlockParam { ID = toolUse.ID, Name = toolUse.Name, Input = toolUse.Input });
                     toolCalls++;
                     var input = JsonSerializer.SerializeToElement(toolUse.Input);
-                    progress?.Report(AIEvent.Now(AIEventKind.ToolCall, $"{toolUse.Name}({Abbrev(input.GetRawText(), 300)})"));
+                    progress?.Report(AIEvent.Now(AIEventKind.ToolCall, $"{toolUse.Name}({ProviderSupport.Abbrev(input.GetRawText(), 300)})"));
                     AIToolResult result;
                     try { result = await tools.ExecuteAsync(toolUse.Name, input, ct).ConfigureAwait(false); }
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex) { result = AIToolResult.Error($"Tool failed: {ex.Message}"); }
-                    var content = result.Content.Length > MaxToolResultChars
-                        ? result.Content[..MaxToolResultChars] + $"\n…(truncated {result.Content.Length - MaxToolResultChars} characters; request a narrower range)"
+                    var content = result.Content.Length > ProviderSupport.MaxToolResultChars
+                        ? result.Content[..ProviderSupport.MaxToolResultChars] + $"\n…(truncated {result.Content.Length - ProviderSupport.MaxToolResultChars} characters; request a narrower range)"
                         : result.Content;
-                    progress?.Report(AIEvent.Now(result.IsError ? AIEventKind.Warning : AIEventKind.ToolResult, $"{toolUse.Name} → {Abbrev(content, 200)}"));
+                    progress?.Report(AIEvent.Now(result.IsError ? AIEventKind.Warning : AIEventKind.ToolResult, $"{toolUse.Name} → {ProviderSupport.Abbrev(content, 200)}"));
                     results.Add(new BetaToolResultBlockParam { ToolUseID = toolUse.ID, Content = content, IsError = result.IsError });
                 }
             }
@@ -203,5 +240,4 @@ public sealed class AnthropicProvider : IAIProvider
         };
     }
 
-    private static string Abbrev(string s, int n) => s.Length <= n ? s : s[..n] + "…";
-}
+    }

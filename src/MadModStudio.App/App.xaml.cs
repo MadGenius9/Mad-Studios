@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Threading;
 using MadModStudio.AI;
+using MadModStudio.AI.Agents;
 using MadModStudio.App.Services;
 using MadModStudio.App.ViewModels;
 using MadModStudio.App.Views;
@@ -41,6 +42,9 @@ public partial class App : Application
             services.AddGame7DTD();
             services.AddAI(paths);
             services.AddSingleton<IAIConsentService, WpfConsentService>();
+            // GUIDED control: agent changes wait in this queue until the user approves them in the Agents tab.
+            services.AddSingleton<ApprovalQueue>();
+            services.AddSingleton<IChangeApprovalService>(sp => sp.GetRequiredService<ApprovalQueue>());
             services.AddSingleton<IDialogService, DialogService>();
             services.AddSingleton<AppState>();
             services.AddSingleton<MainViewModel>();
@@ -53,12 +57,14 @@ public partial class App : Application
             services.AddTransient<BatchScannerViewModel>();
             services.AddTransient<GameProfilesViewModel>();
             services.AddTransient<SettingsViewModel>();
+            services.AddTransient<AIModelsViewModel>();
+            services.AddTransient<AgentsViewModel>();
             services.AddTransient<ProjectViewModel>();
             _services = services.BuildServiceProvider();
             _log = _services.GetRequiredService<ILoggerFactory>().CreateLogger("MadModStudio");
             _log.LogInformation("Mad Mod Studio starting. Data folder: {Root}", paths.Root);
 
-            await _services.GetRequiredService<AIOptions>().LoadAsync(_services.GetRequiredService<ISettingsRepository>());
+            _services.GetRequiredService<AIPolicy>().CopyFrom(await AIPolicy.LoadAsync(_services.GetRequiredService<ISettingsRepository>()));
             var main = _services.GetRequiredService<MainViewModel>();
             var window = new MainWindow { DataContext = main };
             MainWindow = window;

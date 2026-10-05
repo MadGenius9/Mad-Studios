@@ -26,10 +26,13 @@ public sealed class GameProfileService
     private readonly AppPaths _paths;
     private readonly ILogger<GameProfileService> _log;
     private readonly Dictionary<Guid, SqliteGameKnowledgeIndex> _indexCache = new();
+    private readonly IEnumerable<Core.Knowledge.IGameUpdateListener> _updateListeners;
 
     public GameProfileService(IGameProfileRepository profiles, GameInstallLocator locator, GameVersionDetector versionDetector,
-        RuntimeProfileDetector runtimeDetector, GameIndexBuilder indexBuilder, AppPaths paths, ILogger<GameProfileService>? log = null)
+        RuntimeProfileDetector runtimeDetector, GameIndexBuilder indexBuilder, AppPaths paths, ILogger<GameProfileService>? log = null,
+        IEnumerable<Core.Knowledge.IGameUpdateListener>? updateListeners = null)
     {
+        _updateListeners = updateListeners ?? Array.Empty<Core.Knowledge.IGameUpdateListener>();
         _profiles = profiles;
         _locator = locator;
         _versionDetector = versionDetector;
@@ -117,9 +120,39 @@ public sealed class GameProfileService
         }
         profile.IndexStatus = result.Success ? IndexStatus.Indexed : IndexStatus.Failed;
         profile.IndexError = result.Error;
-        if (result.Success) profile.LastIndexedUtc = DateTimeOffset.UtcNow;
+        string? previous = null, current = null;
+        if (result.Success)
+        {
+            profile.LastIndexedUtc = DateTimeOffset.UtcNow;
+            previous = profile.AssemblyFingerprint;
+            current = ComputeFingerprint(profile);
+            profile.AssemblyFingerprint = current;
+        }
         await _profiles.SaveAsync(profile, ct).ConfigureAwait(false);
+        if (current != null && previous != current)
+        {
+            // Game update (or first index): knowledge produced against other assemblies must be re-verified.
+            // Listeners run after the new index state is saved so they can query it.
+            foreach (var l in _updateListeners)
+                await l.OnGameAssembliesChangedAsync(profile.Id, previous, current, ct).ConfigureAwait(false);
+        }
         return result;
+    }
+
+    /// <summary>MVID + size of the primary game assemblies: changes whenever the game is updated.</summary>
+    public static string? ComputeFingerprint(GameProfile profile)
+    {
+        if (profile.ManagedPath is null) return null;
+        var parts = new List<string>();
+        foreach (var name in new[] { "Assembly-CSharp.dll", "Assembly-CSharp-firstpass.dll" })
+        {
+            var path = Path.Combine(profile.ManagedPath, name);
+            if (!File.Exists(path)) continue;
+            var report = new MadModStudio.ModAnalysis.Assemblies.AssemblyInspector().Inspect(path,
+                new MadModStudio.ModAnalysis.Assemblies.AssemblyInspectionOptions { IncludeMembers = false, ComputeHash = false, CollectExternalReferences = false, IncludeNonPublic = false });
+            parts.Add($"{name}:{report.Mvid}:{new FileInfo(path).Length}");
+        }
+        return parts.Count == 0 ? null : string.Join("|", parts);
     }
 
     /// <summary>Returns the knowledge index for a profile, or null if it hasn't been built.</summary>

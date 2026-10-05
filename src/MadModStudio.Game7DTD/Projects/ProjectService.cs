@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MadModStudio.Game7DTD.Projects;
 
+public sealed record ApplyEditsResult(RevisionRecord? Before, RevisionRecord? After);
+
 public sealed record FileEdit(string RelativePath, string? NewContent)
 {
     /// <summary>True when the edit deletes the file.</summary>
@@ -98,11 +100,23 @@ public sealed class ProjectService
     /// Applies a set of edits (e.g. from the AI repair engine) atomically with respect to history: a revision is always
     /// created before the change, and another after it.
     /// </summary>
-    public async Task<RevisionRecord?> ApplyEditsAsync(ModProject project, IReadOnlyList<FileEdit> edits, string action, string reason, CancellationToken ct = default)
+    public async Task<RevisionRecord?> ApplyEditsAsync(ModProject project, IReadOnlyList<FileEdit> edits, string action, string reason, CancellationToken ct = default) =>
+        (await ApplyEditsWithHistoryAsync(project, edits, action, reason, null, ct).ConfigureAwait(false)).After;
+
+    /// <summary>
+    /// Applies edits with a revision before (recording who is about to change which files) and after.
+    /// <paramref name="metadata"/> carries agent/provider/model/task for AI changes.
+    /// </summary>
+    public async Task<ApplyEditsResult> ApplyEditsWithHistoryAsync(ModProject project, IReadOnlyList<FileEdit> edits, string action, string reason,
+        IReadOnlyDictionary<string, string>? metadata, CancellationToken ct = default)
     {
-        if (edits.Count == 0) return null;
+        if (edits.Count == 0) return new ApplyEditsResult(null, null);
         var resolved = edits.Select(e => (Edit: e, Full: Resolve(project, e.RelativePath))).ToList();
-        await _history.CreateRevisionAsync(project, $"Before: {action}", "Automatic safety snapshot before modification", force: true, ct: ct).ConfigureAwait(false);
+        var beforeMeta = new Dictionary<string, string>(metadata ?? new Dictionary<string, string>())
+        {
+            ["filesAboutToChange"] = string.Join(", ", edits.Select(e => e.RelativePath)),
+        };
+        var before = await _history.CreateRevisionAsync(project, $"Before: {action}", "Automatic safety snapshot before modification", force: true, ct: ct, metadata: beforeMeta).ConfigureAwait(false);
         foreach (var (edit, full) in resolved)
         {
             if (edit.IsDelete)
@@ -116,7 +130,8 @@ public sealed class ProjectService
             }
         }
         await TouchAsync(project, ct).ConfigureAwait(false);
-        return await _history.CreateRevisionAsync(project, action, reason, force: true, ct: ct).ConfigureAwait(false);
+        var after = await _history.CreateRevisionAsync(project, action, reason, force: true, ct: ct, metadata: metadata).ConfigureAwait(false);
+        return new ApplyEditsResult(before, after);
     }
 
     /// <summary>Sets the mod version in ModInfo.xml and the project, recording revisions.</summary>

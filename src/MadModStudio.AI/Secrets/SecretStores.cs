@@ -53,13 +53,20 @@ public sealed class DpapiSecretStore : ISecretStore
     }
 }
 
-/// <summary>Read-only store backed by environment variables (e.g. ANTHROPIC_API_KEY). Used on non-Windows hosts and CI.</summary>
+/// <summary>Read-only store backed by environment variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY). Used on non-Windows hosts and CI.</summary>
 public sealed class EnvironmentSecretStore : ISecretStore
 {
     private readonly IReadOnlyDictionary<string, string> _map;
 
     public EnvironmentSecretStore(IReadOnlyDictionary<string, string>? nameToVariable = null) =>
-        _map = nameToVariable ?? new Dictionary<string, string> { ["anthropic.apikey"] = "ANTHROPIC_API_KEY" };
+        _map = nameToVariable ?? new Dictionary<string, string>
+        {
+            ["anthropic.apikey"] = "ANTHROPIC_API_KEY",
+            ["openai.apikey"] = "OPENAI_API_KEY",
+            ["google.apikey"] = "GEMINI_API_KEY",
+            ["xai.apikey"] = "XAI_API_KEY",
+            ["custom.apikey"] = "MADMODSTUDIO_CUSTOM_API_KEY",
+        };
 
     public bool CanWrite => false;
     public string Description => "Environment variables (read-only)";

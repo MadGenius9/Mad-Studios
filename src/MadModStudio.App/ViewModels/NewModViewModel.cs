@@ -1,30 +1,32 @@
-using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MadModStudio.AI;
-using MadModStudio.AI.Engines;
-using MadModStudio.AI.Tools;
+using MadModStudio.AI.Coordination;
+using MadModStudio.AI.Models;
 using MadModStudio.Game7DTD.Projects;
 
 namespace MadModStudio.App.ViewModels;
 
+/// <summary>
+/// New Mod: creates the project and hands the request to the agent team (Lead plans, specialists research/implement,
+/// compiler + validator verify). The board, approvals and escalation run in the project's Agents tab.
+/// </summary>
 public sealed partial class NewModViewModel : PageViewModel
 {
-    private readonly AIModBuilder _builder;
-    private readonly IAIProvider _provider;
+    private readonly IAIProviderRegistry _providers;
+    private readonly IModelCatalog _catalog;
+    private readonly AIPolicy _policy;
     private readonly ProjectService _projects;
     private readonly INavigator _nav;
-    private CancellationTokenSource? _cts;
 
     [ObservableProperty] private string _prompt = "";
     [ObservableProperty] private string _projectName = "";
-    [ObservableProperty] private AIPlan? _plan;
-    [ObservableProperty] private string _planText = "";
 
-    public NewModViewModel(AIModBuilder builder, IAIProvider provider, ProjectService projects, INavigator nav, AppState state)
+    public NewModViewModel(IAIProviderRegistry providers, IModelCatalog catalog, AIPolicy policy, ProjectService projects, INavigator nav, AppState state)
     {
-        _builder = builder;
-        _provider = provider;
+        _providers = providers;
+        _catalog = catalog;
+        _policy = policy;
         _projects = projects;
         _nav = nav;
         State = state;
@@ -32,62 +34,31 @@ public sealed partial class NewModViewModel : PageViewModel
 
     public override string Title => "New Mod";
     public AppState State { get; }
-    public bool IsAIConfigured => _provider.IsConfigured;
-    public bool HasPlan => Plan != null;
-
-    partial void OnPlanChanged(AIPlan? value) => OnPropertyChanged(nameof(HasPlan));
-    public ObservableCollection<string> Events { get; } = new();
+    /// <summary>True only when a provider is configured and at least one model has been discovered.</summary>
+    public bool IsAIConfigured => _providers.All.Any(p => p.IsConfigured) && _catalog.Models.Any(m => m.Available);
+    public string AIStatusText => !_providers.All.Any(p => p.IsConfigured)
+        ? "AI is NOT CONFIGURED. Add a provider in Settings → AI Providers to have the agent team build mods. You can still create an empty project and build it manually."
+        : !_catalog.Models.Any(m => m.Available)
+            ? "A provider is configured but no models have been discovered yet. Open AI Models and click Refresh Models."
+            : $"Agent control: {_policy.ControlLevel.ToString().ToUpperInvariant()} · routing: {_policy.RoutingMode.ToString().ToUpperInvariant()}. "
+              + "Every AI change is shown for approval in GUIDED mode, and a revision is created before every change.";
 
     public override Task OnNavigatedToAsync()
     {
         OnPropertyChanged(nameof(IsAIConfigured));
+        OnPropertyChanged(nameof(AIStatusText));
         return Task.CompletedTask;
     }
 
-    private IProgress<AIEvent> Progress() => new Progress<AIEvent>(e =>
-    {
-        if (e.Kind == AIEventKind.Thinking) return;
-        Events.Add($"{e.TimestampUtc.LocalDateTime:HH:mm:ss} [{e.Kind}] {e.Message}");
-    });
-
     [RelayCommand]
-    private Task MakePlan() => RunAsync("Investigating your installed game and planning...", async () =>
+    private Task CreateWithAgents() => RunAsync("Creating project...", async () =>
     {
         if (string.IsNullOrWhiteSpace(Prompt)) { ErrorMessage = "Describe what you want to build first."; return; }
-        Events.Clear();
-        Plan = null;
-        _cts = new CancellationTokenSource();
-        var progress = Progress();
-        var prompt = Prompt;
-        var profile = State.CurrentProfile;
-        var r = await Task.Run(() => _builder.PlanAsync(prompt, profile, progress, _cts.Token));
-        if (r.Plan is null) { ErrorMessage = r.Error; return; }
-        Plan = r.Plan;
-        PlanText = $"Classification: {r.Plan.Classification}\n\n{r.Plan.Reasoning}\n\nSteps:\n{string.Join("\n", r.Plan.Steps.Select((s, i) => $"  {i + 1}. {s}"))}\n\nVerified game APIs/XML:\n{string.Join("\n", r.Plan.GameApis.Select(a => "  • " + a))}\n\nRisks:\n{string.Join("\n", r.Plan.Risks.Select(a => "  • " + a))}";
-        if (string.IsNullOrWhiteSpace(ProjectName)) ProjectName = r.Plan.SuggestedName ?? "";
-        StatusMessage = $"Plan ready ({r.AIResult?.ToolCallCount ?? 0} game lookups, {r.AIResult?.Usage.InputTokens + r.AIResult?.Usage.OutputTokens:N0} tokens).";
-    });
-
-    [RelayCommand]
-    private Task Generate() => RunAsync("Creating project and generating files...", async () =>
-    {
-        if (Plan is null) return;
         if (string.IsNullOrWhiteSpace(ProjectName)) { ErrorMessage = "Enter a mod name."; return; }
-        _cts = new CancellationTokenSource();
-        var project = await _projects.CreateNewAsync(ProjectName.Trim(), State.CurrentProfile?.Id, description: Prompt);
-        var progress = Progress();
-        var plan = Plan;
-        var prompt = Prompt;
-        var r = await Task.Run(() => _builder.GenerateAsync(project, prompt, plan, progress, _cts.Token));
-        if (!r.Applied)
-        {
-            ErrorMessage = (r.Error ?? "Generation failed.") + " The empty project was created; you can continue manually.";
-        }
-        else
-        {
-            StatusMessage = r.Repair?.Succeeded == true ? "Generated, compiled and validated." : $"Generated. {r.Repair?.StopReason}";
-        }
-        await _nav.OpenProjectAsync(project.Id);
+        if (!IsAIConfigured) { ErrorMessage = AIStatusText; return; }
+        if (State.CurrentProfile is null) { ErrorMessage = "Select an indexed Game Profile first: agents must verify game APIs against your installed game."; return; }
+        var project = await _projects.CreateNewAsync(ProjectName.Trim(), State.CurrentProfile.Id, description: Prompt);
+        await _nav.OpenProjectAsync(project.Id, new AgentLaunch(Prompt.Trim(), WorkflowKind.Create, Array.Empty<(string, string)>(), null));
     });
 
     [RelayCommand]
@@ -97,7 +68,4 @@ public sealed partial class NewModViewModel : PageViewModel
         var project = await _projects.CreateNewAsync(ProjectName.Trim(), State.CurrentProfile?.Id, description: string.IsNullOrWhiteSpace(Prompt) ? null : Prompt);
         await _nav.OpenProjectAsync(project.Id);
     });
-
-    [RelayCommand]
-    private void Cancel() => _cts?.Cancel();
 }

@@ -5,7 +5,6 @@ using CommunityToolkit.Mvvm.Input;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Highlighting;
 using MadModStudio.AI;
-using MadModStudio.AI.Engines;
 using MadModStudio.App.Services;
 using MadModStudio.Core.Models;
 using MadModStudio.Core.Pipeline;
@@ -55,11 +54,7 @@ public sealed partial class ProjectViewModel : PageViewModel
     private readonly DecompilerService _decompiler;
     private readonly VersionComparer _comparer;
     private readonly RepairService _repair;
-    private readonly AIRepairEngine _ai;
-    private readonly IAIProvider _provider;
-    private readonly AIOptions _aiOptions;
     private readonly IDialogService _dialogs;
-    private CancellationTokenSource? _cts;
 
     [ObservableProperty] private ModProject? _project;
     [ObservableProperty] private GameProfile? _profile;
@@ -92,12 +87,8 @@ public sealed partial class ProjectViewModel : PageViewModel
     [ObservableProperty] private string _buildSummary = "";
     [ObservableProperty] private string _compilerLog = "";
 
-    // AI
-    [ObservableProperty] private string _aiInstructions = "";
-
     public ProjectViewModel(ProjectService projects, GameProfileService profiles, ModAnalyzer analyzer, ModBuildPipeline pipeline,
-        AssemblyInspector inspector, DecompilerService decompiler, VersionComparer comparer, RepairService repair, AIRepairEngine ai,
-        IAIProvider provider, AIOptions aiOptions, IDialogService dialogs)
+        AssemblyInspector inspector, DecompilerService decompiler, VersionComparer comparer, RepairService repair, AgentsViewModel agents, IDialogService dialogs)
     {
         _projects = projects;
         _profiles = profiles;
@@ -107,9 +98,7 @@ public sealed partial class ProjectViewModel : PageViewModel
         _decompiler = decompiler;
         _comparer = comparer;
         _repair = repair;
-        _ai = ai;
-        _provider = provider;
-        _aiOptions = aiOptions;
+        Agents = agents;
         _dialogs = dialogs;
         foreach (var (stage, name) in new[] { (PipelineStage.Analyze, "Analyze"), (PipelineStage.GenerateOrRepair, "Generate / Repair"), (PipelineStage.Compile, "Compile"), (PipelineStage.Validate, "Validate"), (PipelineStage.Package, "Package") })
             Stages.Add(new StageItem { Stage = stage, Name = name });
@@ -117,8 +106,8 @@ public sealed partial class ProjectViewModel : PageViewModel
     }
 
     public override string Title => Project?.Name ?? "Project";
-    public bool IsAIConfigured => _provider.IsConfigured;
-    public int MaxAttempts => _aiOptions.MaxAutoRepairAttempts;
+    /// <summary>Agent Workspace (multi-agent, multi-model) for this project.</summary>
+    public AgentsViewModel Agents { get; }
     public Array Configurations { get; } = Enum.GetValues(typeof(BuildConfiguration));
 
     public ObservableCollection<FileNode> FileTree { get; } = new();
@@ -130,13 +119,16 @@ public sealed partial class ProjectViewModel : PageViewModel
     public ObservableCollection<RevisionRecord> Revisions { get; } = new();
     public ObservableCollection<BuildRecord> Builds { get; } = new();
     public ObservableCollection<HarmonyPatchInfo> HarmonyPatches { get; } = new();
-    public ObservableCollection<string> AIEvents { get; } = new();
+    public ObservableCollection<string> LogDiagnosis { get; } = new();
     public ObservableCollection<string> AttachedLogs { get; } = new();
 
     /// <summary>Raised so the view can scroll the editor to a line.</summary>
     public event Action<int>? GoToLineRequested;
 
-    public async Task LoadAsync(Guid id)
+    /// <summary>Index of the Agents tab in ProjectView.</summary>
+    public const int AgentsTabIndex = 2;
+
+    public async Task LoadAsync(Guid id, AgentLaunch? launch = null)
     {
         await RunAsync("Loading project...", async () =>
         {
@@ -153,9 +145,15 @@ public sealed partial class ProjectViewModel : PageViewModel
             AttachedLogs.Clear();
             var logDir = Path.Combine(Project.Workspace.Attachments, "logs");
             if (Directory.Exists(logDir)) foreach (var f in Directory.GetFiles(logDir)) AttachedLogs.Add(f);
+            await Agents.LoadAsync(Project, AfterAgentChangesAsync);
             var firstCode = Flatten(FileTree).FirstOrDefault(n => n.Name.EndsWith(".cs")) ?? Flatten(FileTree).FirstOrDefault(n => n.Name == "ModInfo.xml");
             if (firstCode != null) SelectedFile = firstCode;
         });
+        if (launch != null && Project != null)
+        {
+            SelectedTab = AgentsTabIndex;
+            await Agents.StartAsync(launch);
+        }
     }
 
     private static IEnumerable<FileNode> Flatten(IEnumerable<FileNode> nodes) =>
@@ -507,38 +505,23 @@ public sealed partial class ProjectViewModel : PageViewModel
         var project = Project;
         var d = await Task.Run(() => _repair.DiagnoseAsync(project, inputs));
         _lastDiagnosis = d;
-        AIEvents.Clear();
-        foreach (var line in d.Report.Split('\n')) AIEvents.Add(line.TrimEnd('\r'));
+        LogDiagnosis.Clear();
+        foreach (var line in d.Report.Split('\n')) LogDiagnosis.Add(line.TrimEnd('\r'));
     });
 
     private Diagnosis? _lastDiagnosis;
 
-    [RelayCommand]
-    private Task AIRepair() => RunAsync("AI repair in progress...", async () =>
+    /// <summary>Refreshes files, history and analysis after agents changed the project.</summary>
+    private async Task AfterAgentChangesAsync()
     {
         if (Project is null) return;
-        if (IsDirty && _dialogs.Confirm("Unsaved changes", "Save the open file before AI repair?")) await SaveFileCoreAsync();
-        _cts = new CancellationTokenSource();
-        AIEvents.Clear();
-        var progress = new Progress<AIEvent>(e => { if (e.Kind != AIEventKind.Thinking) AIEvents.Add($"{e.TimestampUtc.LocalDateTime:HH:mm:ss} [{e.Kind}] {e.Message}"); });
-        var project = Project;
-        var options = new RepairRequestOptions { MaxAttempts = _aiOptions.MaxAutoRepairAttempts, UserInstructions = AiInstructions, Diagnosis = _lastDiagnosis };
-        var outcome = await Task.Run(() => _ai.RepairAsync(project, options, progress, _cts.Token));
-        StatusMessage = outcome.StopReason;
-        foreach (var a in outcome.Attempts)
-            AIEvents.Add($"Attempt {a.Number}: {a.Summary}\n  files: {string.Join(", ", a.ChangedFiles)} → compile {(a.CompileSucceededAfter ? "OK" : "failed")}, {a.ValidationErrorsAfter} validation error(s)");
-        if (outcome.FinalBuild != null)
-        {
-            Diagnostics.Clear();
-            foreach (var d in outcome.FinalBuild.AllDiagnostics.Where(d => d.Severity >= Severity.Warning)) Diagnostics.Add(d.ToModDiagnostic());
-        }
+        Project = await _projects.GetAsync(Project.Id) ?? Project;
+        VersionText = Project.Version;
         ReloadTree();
         await ReloadHistoryAsync();
-        if (_openPath != null) OpenFile(_openPath);
-    });
-
-    [RelayCommand]
-    private void CancelOperation() => _cts?.Cancel();
+        if (_openPath != null && File.Exists(Path.Combine(Project.SourcePath, _openPath)) && !IsDirty) OpenFile(_openPath);
+        await AnalyzeCoreAsync();
+    }
 }
 
 /// <summary>Alias to avoid clashing with the EditorHighlighting property name.</summary>

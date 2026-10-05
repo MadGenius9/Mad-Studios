@@ -19,10 +19,12 @@ public sealed class ProjectHistoryService
 {
     private readonly IRevisionRepository _revisions;
     private readonly ILogger<ProjectHistoryService> _log;
+    private readonly Knowledge.IModelPerformanceRepository? _performance;
 
-    public ProjectHistoryService(IRevisionRepository revisions, ILogger<ProjectHistoryService>? log = null)
+    public ProjectHistoryService(IRevisionRepository revisions, ILogger<ProjectHistoryService>? log = null, Knowledge.IModelPerformanceRepository? performance = null)
     {
         _revisions = revisions;
+        _performance = performance;
         _log = log ?? NullLogger<ProjectHistoryService>.Instance;
     }
 
@@ -38,7 +40,7 @@ public sealed class ProjectHistoryService
     /// <paramref name="force"/> is false, no revision is created and null is returned.
     /// </summary>
     public async Task<RevisionRecord?> CreateRevisionAsync(ModProject project, string action, string? reason = null,
-        string? buildStatus = null, bool force = false, CancellationToken ct = default)
+        string? buildStatus = null, bool force = false, CancellationToken ct = default, IReadOnlyDictionary<string, string>? metadata = null)
     {
         var store = Store(project);
         var tree = store.SnapshotDirectory(project.SourcePath);
@@ -74,6 +76,7 @@ public sealed class ProjectHistoryService
             Reason = reason,
             ChangedFiles = changes.Select(c => c.ToString()).ToList(),
             BuildStatus = buildStatus,
+            Metadata = metadata is null ? new() : new Dictionary<string, string>(metadata),
         };
         record = await _revisions.AddAsync(record, ct).ConfigureAwait(false);
         _log.LogInformation("Created revision {Commit} for project {Project}: {Action} ({Count} changes)", commit[..10], project.Name, action, changes.Count);
@@ -115,6 +118,8 @@ public sealed class ProjectHistoryService
             File.WriteAllBytes(target, store.ReadBlob(blob));
         }
         RemoveEmptyDirectories(project.SourcePath);
+        // Restoring to (or before) the snapshot taken before an AI change counts as the user reverting that change.
+        if (_performance != null) await _performance.MarkRevertedByRevisionAsync(project.Id, revision.Id, ct).ConfigureAwait(false);
 
         return await CreateRevisionAsync(project, $"Restored revision {revision.CommitId[..10]}",
             $"Restored to '{revision.Action}' from {revision.TimestampUtc.LocalDateTime:g}", force: true, ct: ct).ConfigureAwait(false);

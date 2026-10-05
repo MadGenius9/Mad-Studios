@@ -8,12 +8,13 @@ public partial class SettingsView : UserControl
 {
     public SettingsView() => InitializeComponent();
 
+    /// <summary>Keys go straight from the PasswordBox to the secret store; they are never bound to a view-model property.</summary>
     private void SaveKey_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is SettingsViewModel vm)
+        if (DataContext is SettingsViewModel vm && sender is Button { Tag: PasswordBox box, DataContext: ProviderItem item })
         {
-            vm.SaveKey(KeyBox.Password);
-            KeyBox.Clear();
+            vm.SaveKey(item, box.Password);
+            box.Clear();
         }
     }
 }

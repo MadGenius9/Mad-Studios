@@ -3,47 +3,184 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="clr-namespace:MadModStudio.App.Views">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="32,24" MaxWidth="900" HorizontalAlignment="Left">
+        <StackPanel Margin="32,24" MaxWidth="980" HorizontalAlignment="Left">
             <TextBlock Text="Settings" Style="{StaticResource H1}" />
             <views:PageStatusBar />
+
+            <!-- AI Providers -->
             <Border Style="{StaticResource Card}">
                 <StackPanel>
-                    <TextBlock Text="AI Provider" Style="{StaticResource H2}" Margin="0,0,0,4" />
-                    <TextBlock Style="{StaticResource Dim}">
-                        <Run Text="Provider:" /> <Run Text="{Binding ProviderName, Mode=OneWay}" Foreground="{StaticResource TextBrush}" />
+                    <TextBlock Text="AI Providers" Style="{StaticResource H2}" Margin="0,0,0,4" />
+                    <TextBlock Style="{StaticResource Dim}" FontSize="11" TextWrapping="Wrap">
+                        <Run Text="Keys are stored with" /> <Run Text="{Binding SecretStoreDescription, Mode=OneWay}" />
+                        <Run Text=". They are never shown, logged, written to projects, exported, packaged or committed to Git. A provider only shows CONNECTED after a real Test Connection succeeds." />
                     </TextBlock>
-                    <TextBlock Text="{Binding KeyStatus}" Margin="0,6,0,6" />
-                    <TextBlock Style="{StaticResource Dim}" FontSize="11">
-                        <Run Text="Stored with:" /> <Run Text="{Binding SecretStoreDescription, Mode=OneWay}" />
-                        <Run Text=". Keys are never written to projects, packages, logs or Git." />
-                    </TextBlock>
-                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0" IsEnabled="{Binding CanStoreKey}">
-                        <PasswordBox x:Name="KeyBox" Width="380" Margin="0,0,8,0" />
-                        <Button Content="Save Key" Style="{StaticResource AccentButton}" Click="SaveKey_Click" />
-                        <Button Content="Remove Key" Command="{Binding RemoveKeyCommand}" />
-                    </StackPanel>
-                    <Grid Margin="0,14,0,0">
+                    <ItemsControl ItemsSource="{Binding Providers}" Margin="0,8,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12,10" Margin="0,0,0,8" Background="{StaticResource Bg2Brush}">
+                                    <StackPanel>
+                                        <DockPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" />
+                                            <TextBlock Text="{Binding Status}" Margin="16,0,0,0" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource TextDimBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding State}" Value="Connected">
+                                                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding State}" Value="Failed">
+                                                                <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding State}" Value="Unverified">
+                                                                <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DockPanel>
+                                        <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,6">
+                                            <Run Text="Data is sent to:" /> <Run Text="{Binding Destination, Mode=OneWay}" />
+                                        </TextBlock>
+                                        <StackPanel Orientation="Horizontal" IsEnabled="{Binding DataContext.CanStoreKey, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                            <PasswordBox x:Name="KeyBox" Width="340" Margin="0,0,8,0" ToolTip="API key (never displayed after saving)" />
+                                            <Button Content="Save Key" Style="{StaticResource AccentButton}" Click="SaveKey_Click" Tag="{Binding ElementName=KeyBox}" />
+                                            <Button Content="Test Connection"
+                                                    Command="{Binding DataContext.TestConnectionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                                            <Button Content="Remove Key"
+                                                    Command="{Binding DataContext.RemoveKeyCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                                   Visibility="{Binding IsCustom, Converter={StaticResource BoolToVis}}"
+                                                   Text="Custom / local endpoint: any OpenAI-compatible Chat Completions server (local runtimes, gateways). Set its URL below; a key is optional." />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Grid Margin="0,4,0,0">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="230" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition /><RowDefinition />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Custom endpoint URL" Style="{StaticResource Label}" />
+                        <TextBox Grid.Column="1" Text="{Binding CustomUrl, UpdateSourceTrigger=PropertyChanged}" Width="420" HorizontalAlignment="Left" Margin="0,4"
+                                 ToolTip="Base URL ending in /v1, e.g. http://localhost:11434/v1" />
+                        <TextBlock Grid.Row="1" Text="Custom endpoint name" Style="{StaticResource Label}" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CustomName, UpdateSourceTrigger=PropertyChanged}" Width="300" HorizontalAlignment="Left" Margin="0,4" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Refresh Models" Command="{Binding RefreshModelsCommand}" ToolTip="Queries each configured provider's model-list API. Only the API key is sent." />
+                        <Button Content="Open Model Profiles File" Command="{Binding OpenProfilesFileCommand}"
+                                ToolTip="Editable capability/pricing profiles used for routing. Prices you enter here drive cost estimates." />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ProfilesPath}" Style="{StaticResource Mono}" FontSize="11" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- Models, routing and control -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Models, Routing &amp; Agent Control" Style="{StaticResource H2}" Margin="0,0,0,8" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="230" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition /><RowDefinition /><RowDefinition />
                         </Grid.RowDefinitions>
-                        <TextBlock Text="Model" Style="{StaticResource Label}" />
-                        <TextBox Grid.Column="1" Text="{Binding Model}" Width="300" HorizontalAlignment="Left" Margin="0,4" />
-                        <TextBlock Grid.Row="1" Text="Max automatic repair attempts" Style="{StaticResource Label}" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding MaxAttempts}" Width="60" HorizontalAlignment="Left" Margin="0,4" />
-                        <Button Grid.Row="2" Grid.Column="1" Content="Save AI Settings" Command="{Binding SaveAISettingsCommand}" HorizontalAlignment="Left" Margin="0,8,0,0" />
+                        <TextBlock Text="Default model" Style="{StaticResource Label}" />
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding ModelChoices}" SelectedItem="{Binding DefaultModel}" Width="360" HorizontalAlignment="Left" Margin="0,4"
+                                  ToolTip="Used in MANUAL routing and as the preferred model when it fits. Models come from provider discovery, never a fixed list." />
+                        <TextBlock Grid.Row="1" Text="Routing mode" Style="{StaticResource Label}" />
+                        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding RoutingModes}" SelectedItem="{Binding RoutingMode}" Width="200" HorizontalAlignment="Left" Margin="0,4"
+                                  ToolTip="AUTO / BEST QUALITY / BALANCED / FAST / ECONOMY / MANUAL. Scores use model profiles plus your own task history." />
+                        <TextBlock Grid.Row="2" Text="Agent control" Style="{StaticResource Label}" />
+                        <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding ControlLevels}" SelectedItem="{Binding ControlLevel}" Width="200" HorizontalAlignment="Left" Margin="0,4"
+                                  ToolTip="AUTOMATIC applies changes; GUIDED (default) asks you to approve each change; MANUAL plans only and you run each agent." />
                     </Grid>
-                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,10,0,0"
-                               Text="Before any AI operation sends project files, logs or diagnostics, Mad Mod Studio shows exactly what may be sent and asks for confirmation." />
                 </StackPanel>
             </Border>
+
+            <!-- Privacy -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Privacy" Style="{StaticResource H2}" Margin="0,0,0,8" />
+                    <CheckBox IsChecked="{Binding AllowCrossProvider}" Margin="0,3"
+                              Content="Allow automatic cross-provider routing (project data may go to a different provider than the current one)" />
+                    <CheckBox IsChecked="{Binding AllowSource}" Margin="0,3" Content="Allow sending mod source files to external AI providers" />
+                    <CheckBox IsChecked="{Binding AllowLogs}" Margin="0,3" Content="Allow sending game/server log excerpts to external AI providers" />
+                    <CheckBox IsChecked="{Binding AskBeforeEachRun}" Margin="0,3" Content="Ask before each AI run (shows which provider(s) will receive which data)" />
+                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                               Text="With cross-provider routing off, a task stays on its current provider; switching to a model from another provider is only suggested, never done automatically." />
+                </StackPanel>
+            </Border>
+
+            <!-- Limits -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Cost Controls &amp; Escalation" Style="{StaticResource H2}" Margin="0,0,0,8" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="230" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Max concurrent agents" Style="{StaticResource Label}" />
+                        <TextBox Grid.Column="1" Text="{Binding MaxConcurrentAgents}" Width="60" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="1" Text="Max repair attempts" Style="{StaticResource Label}" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding MaxRepairAttempts}" Width="60" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="2" Text="Max models per task" Style="{StaticResource Label}" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding MaxModelsPerTask}" Width="60" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="3" Text="Auto-escalate to another model" Style="{StaticResource Label}" />
+                        <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding AutoEscalate}" Margin="0,6" VerticalAlignment="Center"
+                                  Content="Switch automatically (off: Mad Mod Studio suggests and you decide)" />
+                        <TextBlock Grid.Row="4" Text="Escalate after failures" Style="{StaticResource Label}" />
+                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding FailureThreshold}" Width="60" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="5" Text="Session budget (USD, blank = none)" Style="{StaticResource Label}" />
+                        <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SessionBudget}" Width="100" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="6" Text="Project budget (USD)" Style="{StaticResource Label}" />
+                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding ProjectBudget}" Width="100" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="7" Text="Task budget (USD)" Style="{StaticResource Label}" />
+                        <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding TaskBudget}" Width="100" HorizontalAlignment="Left" Margin="0,4" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                               Text="Spend is estimated from token usage reported by providers and the prices in the model profiles file. Models without a known price are reported as 'cost unknown' and do not count toward budgets." />
+                </StackPanel>
+            </Border>
+
+            <!-- Per-task preferences -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Per-Task Model Preferences" Style="{StaticResource H2}" Margin="0,0,0,4" />
+                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,0,0,8" Text="AUTO lets the router choose. A specific model locks that task type to it (unless an agent has its own manual model)." />
+                    <ItemsControl ItemsSource="{Binding Preferences}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                    <TextBlock Text="{Binding TaskType}" Width="230" VerticalAlignment="Center" />
+                                    <ComboBox ItemsSource="{Binding Options}" SelectedItem="{Binding Selected}" Width="360" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Button Content="Save AI Settings" Style="{StaticResource AccentButton}" Command="{Binding SaveAISettingsCommand}" HorizontalAlignment="Left" Margin="0,0,0,16" />
+
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="Data" Style="{StaticResource H2}" Margin="0,0,0,4" />
-                    <TextBlock Style="{StaticResource Dim}" Text="Projects, revision history, build outputs and the game index cache live in your data folder, separate from the game's Mods folder. Nothing is deployed to the game automatically." />
+                    <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Text="Projects, revision history, build outputs, the game index cache, agent knowledge and model performance history live in your data folder, separate from the game's Mods folder. Nothing is deployed to the game automatically." />
                     <TextBlock Text="{Binding Paths.Root}" Style="{StaticResource Mono}" Margin="0,8" />
                     <Button Content="Open Data Folder" Command="{Binding OpenDataFolderCommand}" HorizontalAlignment="Left" />
                 </StackPanel>
@@ -51,7 +188,7 @@
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="Coming Soon" Style="{StaticResource H2}" Margin="0,0,0,4" />
-                    <TextBlock Style="{StaticResource Dim}" Text="Deploy to Game · OpenAI and Google Gemini providers · custom AI instructions · GitHub sync. These are not available yet." />
+                    <TextBlock Style="{StaticResource Dim}" Text="Deploy to Game · GitHub sync. These are not available yet." />
                 </StackPanel>
             </Border>
         </StackPanel>

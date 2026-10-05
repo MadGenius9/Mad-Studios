@@ -12,6 +12,8 @@ public sealed class RevisionRecord
     public string? Reason { get; set; }
     public List<string> ChangedFiles { get; set; } = new();
     public string? BuildStatus { get; set; }
+    /// <summary>Who made the change: agent, provider, model, task (for AI changes), or "user".</summary>
+    public Dictionary<string, string> Metadata { get; set; } = new();
 }
 
 public sealed class BuildRecord

@@ -24,6 +24,11 @@ public sealed class BuildOptions
     /// <summary>Explicit user override: package even when validation reports errors. The ZIP is clearly labeled.</summary>
     public bool PackageWithErrors { get; init; }
     public IReadOnlyList<string> AdditionalReferences { get; init; } = Array.Empty<string>();
+    /// <summary>
+    /// False for ephemeral evaluation (e.g. comparing AI proposals in a scratch copy): nothing is saved to the database,
+    /// no revisions or build records are created and the project status is not changed.
+    /// </summary>
+    public bool Persist { get; init; } = true;
 }
 
 public sealed class BuildResult
@@ -98,7 +103,7 @@ public sealed class ModBuildPipeline
 
         // ---------------- ANALYZE ----------------
         Emit(PipelineStage.Analyze, StageStatus.Running, "Analyzing mod files...");
-        if (options.NewVersion != null && options.NewVersion != project.Version)
+        if (options.Persist && options.NewVersion != null && options.NewVersion != project.Version)
         {
             await _projects.SetVersionAsync(project, options.NewVersion, ct).ConfigureAwait(false);
             Emit(PipelineStage.Analyze, StageStatus.Running, $"Version set to {project.Version} (revision recorded).");
@@ -283,6 +288,11 @@ public sealed class ModBuildPipeline
             : compileOutcome is { Succeeded: false } ? ProjectStatus.BuildFailed
             : validation.HasErrors ? ProjectStatus.ValidationFailed
             : ProjectStatus.BuildSucceeded;
+        if (!options.Persist)
+        {
+            result.Summary = result.Succeeded ? "Evaluation passed (not persisted)." : "Evaluation did not pass (not persisted).";
+            return result;
+        }
         await _projects.SaveAsync(project, ct).ConfigureAwait(false);
 
         var record = new BuildRecord

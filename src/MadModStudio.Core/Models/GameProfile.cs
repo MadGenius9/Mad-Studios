@@ -28,6 +28,8 @@ public sealed class GameProfile
     /// <summary>Path to the per-profile knowledge index (filesystem cache, not the app database).</summary>
     public string? IndexPath { get; set; }
     public CompilationSettings Compilation { get; set; } = new();
+    /// <summary>Fingerprint of the game's primary assemblies at last index (MVID + size). Changes after a game update.</summary>
+    public string? AssemblyFingerprint { get; set; }
 }
 
 /// <summary>

@@ -7,7 +7,7 @@ using Microsoft.Data.Sqlite;
 
 namespace MadModStudio.Persistence;
 
-internal static class Json
+public static class Json
 {
     public static readonly JsonSerializerOptions Options = new()
     {
@@ -140,7 +140,7 @@ public sealed class SqliteRevisionRepository : IRevisionRepository
         using var c = _db.Open();
         using var cmd = c.CreateCommand();
         cmd.CommandText = """
-            SELECT id, project_id, commit_id, parent_commit_id, timestamp_utc, action, reason, changed_files, build_status
+            SELECT id, project_id, commit_id, parent_commit_id, timestamp_utc, action, reason, changed_files, build_status, metadata
             FROM revisions WHERE project_id = $p ORDER BY id DESC
             """;
         cmd.Parameters.AddWithValue("$p", projectId.ToString());
@@ -159,6 +159,7 @@ public sealed class SqliteRevisionRepository : IRevisionRepository
                 Reason = r.IsDBNull(6) ? null : r.GetString(6),
                 ChangedFiles = Json.De<List<string>>(r.GetString(7)),
                 BuildStatus = r.IsDBNull(8) ? null : r.GetString(8),
+                Metadata = r.IsDBNull(9) ? new() : Json.De<Dictionary<string, string>>(r.GetString(9)),
             });
         }
         return Task.FromResult<IReadOnlyList<RevisionRecord>>(list);
@@ -169,8 +170,8 @@ public sealed class SqliteRevisionRepository : IRevisionRepository
         using var c = _db.Open();
         using var cmd = c.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO revisions(project_id, commit_id, parent_commit_id, timestamp_utc, action, reason, changed_files, build_status)
-            VALUES($p, $c, $pc, $t, $a, $r, $f, $b);
+            INSERT INTO revisions(project_id, commit_id, parent_commit_id, timestamp_utc, action, reason, changed_files, build_status, metadata)
+            VALUES($p, $c, $pc, $t, $a, $r, $f, $b, $m);
             SELECT last_insert_rowid();
             """;
         cmd.Parameters.AddWithValue("$p", record.ProjectId.ToString());
@@ -181,6 +182,7 @@ public sealed class SqliteRevisionRepository : IRevisionRepository
         cmd.Parameters.AddWithValue("$r", (object?)record.Reason ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$f", Json.Ser(record.ChangedFiles));
         cmd.Parameters.AddWithValue("$b", (object?)record.BuildStatus ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$m", record.Metadata.Count == 0 ? DBNull.Value : Json.Ser(record.Metadata));
         record.Id = Convert.ToInt64(cmd.ExecuteScalar());
         return Task.FromResult(record);
     }

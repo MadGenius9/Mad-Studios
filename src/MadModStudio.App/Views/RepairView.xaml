@@ -60,10 +60,9 @@
         <DockPanel Grid.Column="2">
             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,4,0,8">
                 <TextBlock Text="Diagnosis" Style="{StaticResource H2}" Margin="0,0,16,0" />
-                <Button Content="AI Repair" Style="{StaticResource AccentButton}" Command="{Binding AIRepairCommand}"
+                <Button Content="Repair with Agents" Style="{StaticResource AccentButton}" Command="{Binding RepairWithAgentsCommand}"
                         Visibility="{Binding Project, Converter={StaticResource NullToVis}}" IsEnabled="{Binding IsAIConfigured}"
-                        ToolTip="Sends diagnostics, relevant files and log excerpts to the AI provider after you confirm. Creates a revision before every change." />
-                <Button Content="Cancel" Command="{Binding CancelCommand}" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+                        ToolTip="Opens the project's Agents tab and starts a Repair workflow. You are told which provider(s) receive data first; a revision is created before every change." />
             </StackPanel>
             <ListBox DockPanel.Dock="Bottom" ItemsSource="{Binding Events}" Height="160" FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="0,8,0,0" />
             <TextBox Text="{Binding DiagnosisText, Mode=OneWay}" Style="{StaticResource ReadOnlyMono}" />

@@ -31,8 +31,10 @@ src/
   MadModStudio.Game7DTD      the 7 Days to Die module: install detection, version/runtime detection, knowledge index,
                              ModInfo, importer, analyzer, validators, log parser, repair diagnosis, batch scanner,
                              build pipeline, project service
-  MadModStudio.AI            provider abstraction, Anthropic provider (official SDK), local context tools,
-                             repair loop, natural-language mod builder, secret storage (DPAPI)
+  MadModStudio.AI            multi-provider layer (Anthropic SDK, OpenAI, Gemini, xAI, custom OpenAI-compatible),
+                             model catalog + profiles, Auto Model Router, performance tracker, budget guard,
+                             project knowledge + context builder, 11 specialist agents, coordinator (task graph,
+                             file ownership, approvals, escalation, second opinions), secret storage (DPAPI)
   MadModStudio.App           WPF desktop app (MVVM, CommunityToolkit.Mvvm, AvalonEdit, DI)
   MadModStudio.Cli           `mms` headless front-end over the same services (scripting, CI, verification)
 tests/
@@ -68,6 +70,8 @@ reference resolver against the same interfaces (`IGameKnowledgeIndex`, `IModVali
 | `workspace/projects/<id>/build/` | Compiler output and the staged mod folder. |
 | `workspace/projects/<id>/output/` | Packaged ZIPs, e.g. `MadWorkingRacks_1.0.9.zip`. |
 | `secrets/` | DPAPI-encrypted API keys (Windows, current user). |
+| `config/model-profiles.json` | Editable model capability/pricing rules used by the router (created from defaults). |
+| `config/models-cache.json` | Last successful model discovery per provider (no secrets). |
 | `logs/` | Application logs (secrets redacted). |
 
 The live game `Mods` folder is never written to. "Deploy to Game" is planned as an explicit, user-initiated action.
@@ -133,27 +137,71 @@ groups with project files (file names, XPaths, Harmony patch classes/targets, st
 last working version (`VersionComparer`: files, unified diffs, DLL metadata diffs), and check the mod against the
 current game index. It produces "LIKELY REGRESSION" conclusions and proposed actions as text.
 
-## AI layer
+## AI layer (multi-model, multi-agent)
 
-* `IAIProvider` — provider-neutral; the provider owns the tool loop so native message formats (e.g. signed thinking
-  blocks) round-trip intact. `AnthropicProvider` uses the official Anthropic C# SDK (`claude-opus-5-5` by default,
-  server-side refusal fallback enabled, typed error handling). OpenAI/Gemini can be added as further providers.
-* `ModToolbox` — local tools the model calls to fetch only what it needs: game API/type/XML/localization search,
-  project file listing/reading, diagnostics, logs, version diff, diagnosis. `propose_file_changes` records edits;
-  it never writes files.
-* `AIRepairEngine` — compile → structured diagnostics → AI (with game API lookups) → proposed patch → revision →
-  apply → compile again, capped at 3 automatic attempts by default (configurable), then stops and shows diagnostics.
-* `AIModBuilder` — classifies a plain-English request (XML-only / C#/Harmony / Hybrid / Needs client assets /
-  Unknown), plans against the index, then generates files into a new project and runs the repair loop.
-* `IAIConsentService` — before any AI operation, the user sees which data categories may be sent and must confirm.
-* Secrets — `DpapiSecretStore` (Windows, current user) with `ANTHROPIC_API_KEY` as a read-only fallback. Keys are
-  redacted from logs and never stored in projects.
+### Providers and models
+
+* `IAIProvider` — provider-neutral contract (`TestConnectionAsync`, `ListModelsAsync`, `RunAsync` with a tool loop the
+  provider owns so native formats round-trip). Implementations: `AnthropicProvider` (official Anthropic C# SDK),
+  `OpenAICompatibleProvider` (OpenAI and xAI Chat Completions), `GeminiProvider` (REST `generateContent`),
+  `CustomEndpointProvider` (any OpenAI-compatible URL: local runtimes, gateways). `ConnectionState` is
+  NOT CONFIGURED / Unverified / CONNECTED / FAILED; CONNECTED is only set by a real successful API call.
+* `IModelCatalog` — models come from each provider's model-list API and are merged with `config/model-profiles.json`
+  (tier, context, tool support, prices; regex rules, editable). The UI never contains hard-coded model names. Unknown
+  prices stay unknown ("cost unknown"), never guessed. The last discovery is cached for offline start.
+* Secrets — `DpapiSecretStore` (Windows, current user) with read-only environment fallbacks (`ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`). Keys are never shown, logged (`SecretRedactor`), stored in
+  projects, exports, packages or Git.
+
+### Routing, learning and cost
+
+* `AIPolicy` — global defaults: default model, routing mode (AUTO / BEST QUALITY / BALANCED / FAST / ECONOMY /
+  MANUAL), agent control (AUTOMATIC / GUIDED (default) / MANUAL), privacy (cross-provider routing off by default,
+  source/log sharing, ask before each run), limits (3 concurrent agents, 3 repair attempts, 3 models per task),
+  escalation (auto off, threshold 2), budgets, per-task model preferences. Projects can override routing, control
+  and per-agent models (AI TEAM / MANAGE TEAM).
+* `IModelRouter` — selection order: explicit model → task-type preference → MANUAL default → hard filters (tools,
+  context size, availability, privacy: no cross-provider switch unless allowed) → weighted score of tier, speed,
+  cost and **your own history**. Every decision carries human-readable reasons ("Why this model?").
+* `IModelPerformanceTracker` — aggregates real task records (success = change compiled + validated + not restored
+  away). Fewer than 3 samples → "INSUFFICIENT DATA"; no benchmark numbers are ever shown or used.
+* `BudgetGuard` — tracks estimated spend from provider-reported tokens × profile prices; blocks runs over budget.
+
+### Knowledge and context
+
+* `ProjectKnowledgeService` — provider-independent project memory in SQLite: findings, verified API facts (checked
+  against the local game index, positive and negative), failed attempts ("DO NOT REPEAT", e.g. members reported
+  missing by CS1061), success patterns (reused only for the same game profile), build/validation evidence.
+  `IGameUpdateListener`: when the game assemblies' fingerprint changes, API knowledge is marked STALE and re-verified.
+* `IAIContextBuilder` — builds only the sections a given agent needs (project, task, game profile, do-not-repeat,
+  verified/stale API findings, latest build/validation, log findings, other agents' findings, recent changes) and a
+  structured handoff, so any model can continue a task without the previous provider's chat history.
+
+### Agents and coordination
+
+* `AgentCatalog` — Lead, Architect, Game API Research, C#/Harmony, XML/XPath, Log Detective, Compiler Repair,
+  DLL Analysis, Compatibility, Validator (independent reviewer) and Documentation. Each has its own tool set and
+  write permission; evidence from local tools outranks AI interpretation.
+* `AgentToolbox` — local tools (index search, file read/list, diagnostics, logs, version diff, findings, task plan,
+  `propose_file_changes`). Agents must read a file before proposing changes to it; proposals never write directly.
+* `AgentCoordinator` — gathers evidence (analysis, build, diagnosis) → Lead submits a validated task graph → tasks run
+  in parallel up to the concurrency limit → each proposal is approved (GUIDED/MANUAL) and applied through
+  `AgentChangeService` with a revision first (metadata: agent, provider, model, task) under single-writer file
+  ownership with conflict detection → compile/repair loop → validators → independent review on a different model →
+  package. Repeated failures produce an escalation suggestion (TRY x / KEEP CURRENT / CHOOSE MODEL) or, if enabled,
+  an automatic switch. "Ask another model" evaluates an alternative proposal in a sandbox build; the compiler and
+  validators decide, not AI votes.
+* `IAIConsentService` — before a run, the user sees which provider(s) receive which data categories.
 
 ## Desktop app
 
 WPF + MVVM (CommunityToolkit.Mvvm) + Microsoft.Extensions.DependencyInjection. Left navigation (Home, New Mod,
-Repair Mod, My Mods, Batch Scanner, Game Profiles, Settings). The project screen has files on the left, tabs in the
-center (Overview, Files, AI, Analysis, Build, Validation, History), the build pipeline always visible on the right and
+Repair Mod, My Mods, Batch Scanner, AI Models, Game Profiles, Settings) and a global default-model selector in the
+status bar. The project screen has files on the left, tabs in the center (Overview, Files, Agents, Analysis, Build,
+Validation, History, Logs). The Agents tab holds the Agent Board (IDLE / PLANNING / WORKING / WAITING / BLOCKED /
+NEEDS REVIEW / FAILED / COMPLETE with details: actions, files, findings, routing reasons — never hidden reasoning),
+approvals with diffs, escalation, AI TEAM, proposals (second opinion, restore before this agent change), report,
+activity and handoff, the build pipeline always visible on the right and
 diagnostics at the bottom. The editor is AvalonEdit with C#/XML/JSON highlighting; decompiled code is shown read-only
 under an explicit "DECOMPILED / RECONSTRUCTED SOURCE" banner. Unhandled UI exceptions are logged and reported
 without terminating the app.

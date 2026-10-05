@@ -149,30 +149,8 @@
                     </DockPanel>
                 </TabItem>
 
-                <TabItem Header="AI">
-                    <DockPanel>
-                        <StackPanel DockPanel.Dock="Top">
-                            <Border Style="{StaticResource Notice}" Visibility="{Binding IsAIConfigured, Converter={StaticResource InvBoolToVis}}">
-                                <TextBlock TextWrapping="Wrap" Text="AI is not configured. Add an API key in Settings. Log diagnosis below works without AI." />
-                            </Border>
-                            <TextBlock Text="Instructions for the AI (optional)" Style="{StaticResource Label}" />
-                            <TextBox Text="{Binding AiInstructions, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource MultiLineBox}" Height="60" />
-                            <WrapPanel Margin="0,8,0,8">
-                                <Button Style="{StaticResource AccentButton}" Command="{Binding AIRepairCommand}" IsEnabled="{Binding IsAIConfigured}"
-                                        ToolTip="Compile → diagnostics → AI analysis with game API search → patch → revision → recompile.">
-                                    <TextBlock><Run Text="AI Repair (max" /> <Run Text="{Binding MaxAttempts, Mode=OneWay}" /> <Run Text="attempts)" /></TextBlock>
-                                </Button>
-                                <Button Content="Attach Log…" Command="{Binding AttachLogCommand}" />
-                                <Button Content="Diagnose Logs" Command="{Binding DiagnoseLogsCommand}" />
-                                <Button Content="Cancel" Command="{Binding CancelOperationCommand}" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
-                            </WrapPanel>
-                            <TextBlock Text="Attached logs" Style="{StaticResource Label}" />
-                            <ListBox ItemsSource="{Binding AttachedLogs}" Height="54" Margin="0,0,0,8" />
-                        </StackPanel>
-                        <ListBox ItemsSource="{Binding AIEvents}" FontFamily="{StaticResource MonoFont}" FontSize="11" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate></ListBox.ItemTemplate>
-                        </ListBox>
-                    </DockPanel>
+                <TabItem Header="Agents">
+                    <views:AgentsView DataContext="{Binding Agents}" Margin="0,6,0,0" />
                 </TabItem>
 
                 <TabItem Header="Analysis">
@@ -335,6 +313,23 @@
                             </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
+                </TabItem>
+                <TabItem Header="Logs">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top">
+                            <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="0,0,0,6"
+                                       Text="Attach client or server logs. Diagnosis runs locally (no AI). Attached logs are also available to the Log Detective agent when log sharing is allowed in Settings → Privacy." />
+                            <WrapPanel Margin="0,0,0,8">
+                                <Button Content="Attach Log…" Command="{Binding AttachLogCommand}" />
+                                <Button Content="Diagnose Logs" Command="{Binding DiagnoseLogsCommand}" />
+                            </WrapPanel>
+                            <TextBlock Text="Attached logs" Style="{StaticResource Label}" />
+                            <ListBox ItemsSource="{Binding AttachedLogs}" Height="54" Margin="0,0,0,8" />
+                        </StackPanel>
+                        <ListBox ItemsSource="{Binding LogDiagnosis}" FontFamily="{StaticResource MonoFont}" FontSize="11" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate></ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
                 </TabItem>
             </TabControl>
             <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" Width="5" />

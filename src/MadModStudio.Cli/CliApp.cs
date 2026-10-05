@@ -1,6 +1,11 @@
 using MadModStudio.AI;
-using MadModStudio.AI.Engines;
+using MadModStudio.AI.Agents;
+using MadModStudio.AI.Coordination;
+using MadModStudio.AI.Knowledge;
+using MadModStudio.AI.Models;
 using MadModStudio.AI.Providers;
+using MadModStudio.AI.Routing;
+using MadModStudio.Core.Knowledge;
 using MadModStudio.AI.Secrets;
 using MadModStudio.Core;
 using MadModStudio.Core.Models;
@@ -47,11 +52,21 @@ public static class CliApp
           mms diagnose <projectId> [--log <file>]... [--working <zip|folder>]
           mms compare <oldModFolder> <newModFolder>
           mms scan <modsFolder> [--profile <id>]
-          mms ai-key set <key> | ai-key status       (stores via the platform secret store)
-          mms ai-plan "<request>" --yes [--profile <id>]
-          mms ai-repair <projectId> --yes [--attempts N] [--log <file>]... [--working <zip|folder>]
 
-        AI commands send data to the configured AI provider; --yes confirms you accept that.
+        AI (multi-provider, multi-agent):
+          mms ai providers                         provider status (never "Connected" without a real test)
+          mms ai key <provider> <key>              store a key (anthropic | openai | google | xai | custom)
+          mms ai test [provider]                   real connection test(s)
+          mms ai models [--refresh]                discovered models with capability metadata
+          mms ai policy [set <Field> <value>]      show/change routing, control, privacy and limits
+          mms ai fix <projectId> "<request>" --yes [--approve-all] [--log <file>]... [--working <zip|folder>] [--no-package]
+          mms ai create <projectId> "<request>" --yes [--approve-all]
+          mms ai agent <projectId> <AgentKind> "<instructions>" --yes [--model provider/model] [--approve-all]
+          mms ai handoff <projectId>               structured handoff for switching models
+          mms ai performance                       model success rates from your own history
+
+        AI commands send data to AI providers; --yes confirms you accept that. Without --approve-all, proposed
+        file changes are rejected (Guided control) unless Agent Control is AUTOMATIC.
 
         Data folder: %LOCALAPPDATA%\MadModStudio (override with MADMODSTUDIO_HOME).
         """;
@@ -71,7 +86,9 @@ public static class CliApp
         services.AddGame7DTD();
         services.AddAI(sp0Paths);
         services.AddSingleton<IAIConsentService>(new CliConsent(args.Contains("--yes")));
+        services.AddSingleton<IChangeApprovalService>(new CliApproval(args.Contains("--approve-all")));
         await using var sp = services.BuildServiceProvider();
+        sp.GetRequiredService<AIPolicy>().CopyFrom(await AIPolicy.LoadAsync(sp.GetRequiredService<MadModStudio.Core.Abstractions.ISettingsRepository>()));
 
         try
         {
@@ -89,9 +106,7 @@ public static class CliApp
                 "diagnose" => await Diagnose(sp, args),
                 "compare" => Compare(sp, args),
                 "scan" => await Scan(sp, args),
-                "ai-key" => AiKey(sp, args),
-                "ai-plan" => await AiPlan(sp, args),
-                "ai-repair" => await AiRepair(sp, args),
+                "ai" => await Ai(sp, args),
                 _ => Fail($"Unknown command '{args[0]}'.\n\n{Usage}"),
             };
         }
@@ -356,58 +371,127 @@ public static class CliApp
         return 0;
     }
 
-    private static int AiKey(IServiceProvider sp, string[] args)
+    private static async Task<int> Ai(IServiceProvider sp, string[] args)
     {
-        var secrets = sp.GetRequiredService<ISecretStore>();
+        var registry = sp.GetRequiredService<IAIProviderRegistry>();
+        var catalog = sp.GetRequiredService<IModelCatalog>();
+        var policy = sp.GetRequiredService<AIPolicy>();
+        var settings = sp.GetRequiredService<MadModStudio.Core.Abstractions.ISettingsRepository>();
         switch (args.ElementAtOrDefault(1))
         {
-            case "set":
-                var key = args.ElementAtOrDefault(2) ?? throw new ArgumentException("Missing key.");
-                try { secrets.Set(AnthropicProvider.SecretName, key); }
-                catch (NotSupportedException ex) { return Fail(ex.Message + " Set the ANTHROPIC_API_KEY environment variable instead."); }
-                Console.WriteLine($"Key stored ({secrets.Description}).");
+            case "providers":
+                foreach (var p in registry.All)
+                    Console.WriteLine($"{p.Id,-10} {p.DisplayName,-28} {(p.IsConfigured ? "Configured (run 'mms ai test' to verify)" : "Not configured"),-44} → {p.Destination}");
                 return 0;
+            case "key":
+            {
+                var id = args.ElementAtOrDefault(2) ?? throw new ArgumentException("Missing provider id.");
+                var key = args.ElementAtOrDefault(3) ?? throw new ArgumentException("Missing key.");
+                if (registry.Get(id) is null) return Fail($"Unknown provider '{id}'.");
+                try { sp.GetRequiredService<ISecretStore>().Set(SecretNames.ApiKey(id), key); }
+                catch (NotSupportedException ex) { return Fail(ex.Message + " Use the provider's environment variable instead."); }
+                Console.WriteLine($"Key stored for {id} ({sp.GetRequiredService<ISecretStore>().Description}). Run 'mms ai test {id}'.");
+                return 0;
+            }
+            case "test":
+                foreach (var p in registry.All.Where(p => args.Length < 3 || p.Id == args[2]))
+                {
+                    var status = await p.TestConnectionAsync();
+                    Console.WriteLine($"{p.DisplayName,-28} {status.State,-14} {status.Message}");
+                }
+                return 0;
+            case "models":
+                if (Flag(args, "--refresh"))
+                    foreach (var r in await catalog.RefreshAsync())
+                        Console.WriteLine(r.Success ? $"{r.ProviderId}: {r.ModelCount} model(s) discovered" : $"{r.ProviderId}: {r.Error}");
+                Console.WriteLine($"{"Model",-48} {"Tier",-9} {"Context",10} {"Tools",6} {"Price in/out",14}  Source");
+                foreach (var m in catalog.Models)
+                    Console.WriteLine($"{m.Key,-48} {m.Tier,-9} {(m.ContextTokens?.ToString("N0") ?? "?"),10} {(m.SupportsTools ? "yes" : "no"),6} {(m.CostKnown ? $"{m.InputCostPerMTok}/{m.OutputCostPerMTok}" : "unknown"),14}  {m.MetadataSource}");
+                if (catalog.Models.Count == 0) Console.WriteLine("(no models known — configure a provider and run 'mms ai models --refresh')");
+                return 0;
+            case "policy":
+                if (args.ElementAtOrDefault(2) == "set")
+                {
+                    var field = args.ElementAtOrDefault(3) ?? throw new ArgumentException("Missing field.");
+                    var value = args.ElementAtOrDefault(4) ?? throw new ArgumentException("Missing value.");
+                    var prop = typeof(AIPolicy).GetProperty(field) ?? throw new ArgumentException($"Unknown field '{field}'.");
+                    var t = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                    object? v = value == "null" ? null : t.IsEnum ? Enum.Parse(t, value, true) : Convert.ChangeType(value, t, System.Globalization.CultureInfo.InvariantCulture);
+                    prop.SetValue(policy, v);
+                    await policy.SaveAsync(settings);
+                }
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(policy, new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } }));
+                return 0;
+            case "fix":
+            case "create":
+            {
+                var project = await ResolveProject(sp, args.ElementAtOrDefault(2) ?? "");
+                var request = args.ElementAtOrDefault(3) ?? throw new ArgumentException("Missing request text.");
+                var logs = Opts(args, "--log").Select(l => (l, l.Contains("server", StringComparison.OrdinalIgnoreCase) ? "server" : "client")).ToList();
+                var result = await sp.GetRequiredService<IAgentCoordinator>().RunWorkflowAsync(new WorkflowRequest
+                {
+                    Project = project, UserRequest = request, Kind = args[1] == "fix" ? WorkflowKind.Repair : WorkflowKind.Create,
+                    Package = !Flag(args, "--no-package"), Logs = logs, WorkingVersionPath = Opt(args, "--working"),
+                }, new ConsoleObserver());
+                Console.WriteLine();
+                Console.WriteLine(result.Report);
+                return result.Success ? 0 : 2;
+            }
+            case "agent":
+            {
+                var project = await ResolveProject(sp, args.ElementAtOrDefault(2) ?? "");
+                var kind = Enum.Parse<AgentKind>(args.ElementAtOrDefault(3) ?? throw new ArgumentException("Missing agent kind."), true);
+                var instructions = args.ElementAtOrDefault(4) ?? throw new ArgumentException("Missing instructions.");
+                var task = await sp.GetRequiredService<IAgentCoordinator>().RunAgentTaskAsync(project, kind, instructions, Opt(args, "--model"), null, new ConsoleObserver());
+                Console.WriteLine($"{task.Agent}: {task.State} — {task.ResultSummary ?? task.Error}");
+                return task.State == AgentTaskState.Complete ? 0 : 2;
+            }
+            case "handoff":
+            {
+                var project = await ResolveProject(sp, args.ElementAtOrDefault(2) ?? "");
+                var profile = project.GameProfileId is { } pid ? await sp.GetRequiredService<GameProfileService>().GetAsync(pid) : null;
+                Console.WriteLine(await sp.GetRequiredService<IAIContextBuilder>().BuildHandoffAsync(project, profile, null, null));
+                return 0;
+            }
+            case "performance":
+            {
+                var stats = await sp.GetRequiredService<IModelPerformanceTracker>().GetStatsAsync();
+                if (stats.Count == 0) { Console.WriteLine("INSUFFICIENT DATA — no AI tasks have been recorded yet."); return 0; }
+                foreach (var s in stats.OrderBy(s => s.Provider).ThenBy(s => s.Model).ThenBy(s => s.TaskType))
+                    Console.WriteLine($"{s.Provider}/{s.Model,-36} {s.TaskType,-22} {(s.HasEnoughData ? $"{s.SuccessRate:P0}" : "INSUFFICIENT DATA"),-18} ({s.Successes}/{s.Total}, reverted {s.Reverted})");
+                return 0;
+            }
             default:
-                Console.WriteLine(sp.GetRequiredService<IAIProvider>().IsConfigured ? $"An API key is available ({secrets.Description})." : "No API key configured.");
-                return 0;
+                return Fail("Use: ai providers|key|test|models|policy|fix|create|agent|handoff|performance");
         }
     }
 
-    private static IProgress<AIEvent> AiProgress() => new AiConsoleProgress();
-
-    private static async Task<int> AiPlan(IServiceProvider sp, string[] args)
+    private sealed class ConsoleObserver : IAgentRunObserver
     {
-        var request = args.ElementAtOrDefault(1) ?? throw new ArgumentException("Missing request text.");
-        await sp.GetRequiredService<AIOptions>().LoadAsync(sp.GetRequiredService<MadModStudio.Core.Abstractions.ISettingsRepository>());
-        var profile = await ResolveProfile(sp, args);
-        var r = await sp.GetRequiredService<AIModBuilder>().PlanAsync(request, profile, AiProgress());
-        if (r.Plan is null) return Fail(r.Error ?? "No plan.");
-        Console.WriteLine($"Classification: {r.Plan.Classification}\n{r.Plan.Reasoning}\n");
-        foreach (var (s, i) in r.Plan.Steps.Select((s, i) => (s, i))) Console.WriteLine($"{i + 1}. {s}");
-        Console.WriteLine("Verified game APIs: " + string.Join(", ", r.Plan.GameApis));
-        foreach (var risk in r.Plan.Risks) Console.WriteLine("Risk: " + risk);
-        return 0;
-    }
-
-    private static async Task<int> AiRepair(IServiceProvider sp, string[] args)
-    {
-        var project = await ResolveProject(sp, args.ElementAtOrDefault(1) ?? "");
-        var options = sp.GetRequiredService<AIOptions>();
-        await options.LoadAsync(sp.GetRequiredService<MadModStudio.Core.Abstractions.ISettingsRepository>());
-        Diagnosis? diagnosis = null;
-        var logs = Opts(args, "--log").ToList();
-        if (logs.Count > 0 || Opt(args, "--working") != null)
+        private readonly Dictionary<string, AgentTaskState> _last = new();
+        public void OnEvent(string message) => Console.WriteLine(message);
+        public void OnTaskChanged(AgentTaskRecord t)
         {
-            var inputs = new RepairInputs { WorkingVersionPath = Opt(args, "--working") };
-            foreach (var l in logs) inputs.Logs.Add((l, l.Contains("server", StringComparison.OrdinalIgnoreCase) ? "server" : "client"));
-            diagnosis = await sp.GetRequiredService<RepairService>().DiagnoseAsync(project, inputs);
+            lock (_last)
+            {
+                if (_last.TryGetValue(t.Id, out var s) && s == t.State) return;
+                _last[t.Id] = t.State;
+            }
+            Console.WriteLine($"  [{t.State,-11}] {t.Agent,-16} {t.Title}{(t.Model != null ? "  (" + t.Model + ")" : "")}{(t.Error != null ? " — " + t.Error : "")}");
         }
-        var attempts = int.TryParse(Opt(args, "--attempts"), out var n) ? n : options.MaxAutoRepairAttempts;
-        var outcome = await sp.GetRequiredService<AIRepairEngine>().RepairAsync(project, new RepairRequestOptions { MaxAttempts = attempts, Diagnosis = diagnosis }, AiProgress());
-        foreach (var a in outcome.Attempts)
-            Console.WriteLine($"Attempt {a.Number}: {a.Summary}\n  {string.Join(", ", a.ChangedFiles)} → compile {(a.CompileSucceededAfter ? "OK" : "failed")}");
-        Console.WriteLine(outcome.StopReason);
-        return outcome.Succeeded ? 0 : 2;
+    }
+
+    private sealed class CliApproval : IChangeApprovalService
+    {
+        private readonly bool _approve;
+        public CliApproval(bool approve) => _approve = approve;
+        public Task<bool> RequestAsync(PendingChange change, CancellationToken ct = default)
+        {
+            Console.WriteLine($"Proposed change from {change.Agent} ({change.Model}): {change.Summary}");
+            Console.WriteLine(change.Diff.Length > 4000 ? change.Diff[..4000] + "\n…" : change.Diff);
+            Console.WriteLine(_approve ? "→ approved (--approve-all)" : "→ rejected (pass --approve-all to apply changes from the CLI)");
+            return Task.FromResult(_approve);
+        }
     }
 
     private sealed class CliConsent : IAIConsentService
@@ -419,14 +503,6 @@ public static class CliApp
             Console.WriteLine($"{notice.Operation} may send to {notice.ProviderName} ({notice.Destination}): {string.Join("; ", notice.DataCategories)}");
             if (!_yes) Console.Error.WriteLine("Refusing without --yes.");
             return Task.FromResult(_yes);
-        }
-    }
-
-    private sealed class AiConsoleProgress : IProgress<AIEvent>
-    {
-        public void Report(AIEvent e)
-        {
-            if (e.Kind != AIEventKind.Thinking) Console.WriteLine($"[{e.Kind}] {e.Message}");
         }
     }
 
