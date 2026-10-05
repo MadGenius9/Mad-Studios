@@ -433,7 +433,7 @@ public class OwnershipAndKnowledgeTests
         pk.Objective = "Repair drone home behaviour";
         await knowledge.Repository.SaveProjectAsync(pk);
 
-        var handoff = await host.Get<IAIContextBuilder>().BuildHandoffAsync(project, profile, null, "Fix Patches.cs");
+        var handoff = (await host.Get<IAIContextBuilder>().BuildHandoffAsync(project, profile, null, "Fix Patches.cs")).ReplaceLineEndings("\n");
 
         Assert.Contains("OBJECTIVE:\n  Repair drone home behaviour", handoff);
         Assert.Contains("EntityDrone.GetHomePosition does NOT exist", handoff);

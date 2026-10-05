@@ -8,7 +8,7 @@ namespace MadModStudio.Persistence;
 /// </summary>
 public sealed class AppDatabase
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
     private readonly string _connectionString;
 
     public AppDatabase(string databasePath)
@@ -51,6 +51,26 @@ public sealed class AppDatabase
         if (version >= SchemaVersion) return;
         if (version < 1) MigrateV1(c);
         if (version < 2) MigrateV2(c);
+        if (version < 3) MigrateV3(c);
+    }
+
+    private static void MigrateV3(SqliteConnection c)
+    {
+        using var tx = c.BeginTransaction();
+        using var cmd = c.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS deployments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                deployed_utc TEXT NOT NULL,
+                data TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_deployments_project ON deployments(project_id, id);
+            PRAGMA user_version = 3;
+            """;
+        cmd.ExecuteNonQuery();
+        tx.Commit();
     }
 
     private static void MigrateV2(SqliteConnection c)

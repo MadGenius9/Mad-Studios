@@ -40,3 +40,22 @@ public sealed class AppSetting
     public string Key { get; set; } = "";
     public string? Value { get; set; }
 }
+
+/// <summary>One "Deploy to Game" action: which package went into which game Mods folder, and how to undo it.</summary>
+public sealed class DeploymentRecord
+{
+    public long Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid GameProfileId { get; set; }
+    public DateTimeOffset DeployedUtc { get; set; } = DateTimeOffset.UtcNow;
+    public string Version { get; set; } = "";
+    public string PackagePath { get; set; } = "";
+    /// <summary>Full path of the mod folder written inside the game's Mods folder.</summary>
+    public string TargetPath { get; set; } = "";
+    /// <summary>Copy of the folder that was there before (null when the target did not exist).</summary>
+    public string? BackupPath { get; set; }
+    /// <summary>Relative path → SHA-256 of every deployed file; used to detect later edits before undo.</summary>
+    public Dictionary<string, string> Manifest { get; set; } = new();
+    public DateTimeOffset? UndoneUtc { get; set; }
+    public bool IsUndone => UndoneUtc != null;
+}

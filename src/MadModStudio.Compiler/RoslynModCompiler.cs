@@ -78,10 +78,13 @@ public sealed class RoslynModCompiler : IModCompiler
             }
             try
             {
-                references.Add(MetadataReference.CreateFromFile(r));
+                // Read into memory instead of CreateFromFile: a memory-mapped reference keeps the game's DLLs locked
+                // (blocking game updates) until the GC happens to release it.
+                var image = System.Runtime.InteropServices.ImmutableCollectionsMarshal.AsImmutableArray(File.ReadAllBytes(r));
+                references.Add(MetadataReference.CreateFromImage(image, filePath: r));
                 used.Add(r);
             }
-            catch (Exception ex) when (ex is IOException or BadImageFormatException or ArgumentException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BadImageFormatException or ArgumentException)
             {
                 diagnostics.Add(new CompilerDiagnostic("MMS0005", Severity.Warning, $"Reference could not be read ({ex.Message}): {r}", null, null, null, null, null));
             }

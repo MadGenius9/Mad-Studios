@@ -15,6 +15,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProjectRepository, SqliteProjectRepository>();
         services.AddSingleton<IRevisionRepository, SqliteRevisionRepository>();
         services.AddSingleton<IBuildRecordRepository, SqliteBuildRecordRepository>();
+        services.AddSingleton<IDeploymentRepository, SqliteDeploymentRepository>();
         services.AddSingleton<ISettingsRepository, SqliteSettingsRepository>();
         services.AddSingleton<MadModStudio.Core.Knowledge.IKnowledgeRepository, SqliteKnowledgeRepository>();
         services.AddSingleton<MadModStudio.Core.Knowledge.IModelPerformanceRepository, SqliteModelPerformanceRepository>();

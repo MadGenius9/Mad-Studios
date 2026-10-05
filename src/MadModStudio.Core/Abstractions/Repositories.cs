@@ -31,6 +31,13 @@ public interface IBuildRecordRepository
     Task<BuildRecord> AddAsync(BuildRecord record, CancellationToken ct = default);
 }
 
+public interface IDeploymentRepository
+{
+    Task<IReadOnlyList<DeploymentRecord>> ListAsync(Guid projectId, CancellationToken ct = default);
+    Task<DeploymentRecord> AddAsync(DeploymentRecord record, CancellationToken ct = default);
+    Task UpdateAsync(DeploymentRecord record, CancellationToken ct = default);
+}
+
 public interface ISettingsRepository
 {
     Task<string?> GetAsync(string key, CancellationToken ct = default);

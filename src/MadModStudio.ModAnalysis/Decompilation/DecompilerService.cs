@@ -25,7 +25,8 @@ public sealed class DecompilerService
     {
         try
         {
-            var decompiler = Create(assemblyPath, searchDirectories);
+            using var module = Open(assemblyPath);
+            var decompiler = Create(module, assemblyPath, searchDirectories);
             var text = decompiler.DecompileTypeAsString(new FullTypeName(typeFullName.Replace('+', '/')));
             return new DecompiledSource(true, DecompiledSource.Banner + text, null);
         }
@@ -39,7 +40,8 @@ public sealed class DecompilerService
     {
         try
         {
-            var decompiler = Create(assemblyPath, searchDirectories);
+            using var module = Open(assemblyPath);
+            var decompiler = Create(module, assemblyPath, searchDirectories);
             var text = decompiler.DecompileWholeModuleAsString();
             return new DecompiledSource(true, DecompiledSource.Banner + text, null);
         }
@@ -49,15 +51,19 @@ public sealed class DecompilerService
         }
     }
 
-    private static CSharpDecompiler Create(string assemblyPath, IEnumerable<string>? searchDirectories)
+    // Whole images are read into memory so no file handle or memory map is left on the assembly (or on the game's
+    // DLLs resolved as references), which would otherwise lock the game folder until garbage collection.
+    private static PEFile Open(string assemblyPath) => new(assemblyPath, System.Reflection.PortableExecutable.PEStreamOptions.PrefetchEntireImage);
+
+    private static CSharpDecompiler Create(PEFile module, string assemblyPath, IEnumerable<string>? searchDirectories)
     {
         var settings = new DecompilerSettings(LanguageVersion.CSharp7_3)
         {
             ThrowOnAssemblyResolveErrors = false,
             LoadInMemory = true,
         };
-        var module = new PEFile(assemblyPath, System.Reflection.PortableExecutable.PEStreamOptions.PrefetchEntireImage);
-        var resolver = new UniversalAssemblyResolver(assemblyPath, false, module.DetectTargetFrameworkId());
+        var resolver = new UniversalAssemblyResolver(assemblyPath, false, module.DetectTargetFrameworkId(),
+            streamOptions: System.Reflection.PortableExecutable.PEStreamOptions.PrefetchEntireImage);
         resolver.AddSearchDirectory(Path.GetDirectoryName(Path.GetFullPath(assemblyPath))!);
         if (searchDirectories != null)
             foreach (var d in searchDirectories.Where(Directory.Exists)) resolver.AddSearchDirectory(d);

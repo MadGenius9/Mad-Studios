@@ -2,6 +2,7 @@ using MadModStudio.Compiler;
 using MadModStudio.Core.History;
 using MadModStudio.Core.Validation;
 using MadModStudio.Game7DTD.Build;
+using MadModStudio.Game7DTD.Deploy;
 using MadModStudio.Game7DTD.Index;
 using MadModStudio.Game7DTD.Install;
 using MadModStudio.Game7DTD.Logs;
@@ -46,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<LogParser>();
         services.AddSingleton<RepairService>();
         services.AddSingleton<BatchModScanner>();
+        services.AddSingleton<ModDeployService>();
 
         // Validators run in registration order.
         services.AddSingleton<IModValidator, ModInfoValidator>();

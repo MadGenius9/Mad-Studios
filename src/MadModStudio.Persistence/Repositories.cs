@@ -234,6 +234,52 @@ public sealed class SqliteBuildRecordRepository : IBuildRecordRepository
     }
 }
 
+public sealed class SqliteDeploymentRepository : IDeploymentRepository
+{
+    private readonly AppDatabase _db;
+    public SqliteDeploymentRepository(AppDatabase db) => _db = db;
+
+    public Task<IReadOnlyList<DeploymentRecord>> ListAsync(Guid projectId, CancellationToken ct = default)
+    {
+        using var c = _db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT id, data FROM deployments WHERE project_id = $p ORDER BY id DESC";
+        cmd.Parameters.AddWithValue("$p", projectId.ToString());
+        var list = new List<DeploymentRecord>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            var d = Json.De<DeploymentRecord>(r.GetString(1));
+            d.Id = r.GetInt64(0);
+            list.Add(d);
+        }
+        return Task.FromResult<IReadOnlyList<DeploymentRecord>>(list);
+    }
+
+    public Task<DeploymentRecord> AddAsync(DeploymentRecord record, CancellationToken ct = default)
+    {
+        using var c = _db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "INSERT INTO deployments(project_id, deployed_utc, data) VALUES($p, $t, $d); SELECT last_insert_rowid();";
+        cmd.Parameters.AddWithValue("$p", record.ProjectId.ToString());
+        cmd.Parameters.AddWithValue("$t", Json.Iso(record.DeployedUtc));
+        cmd.Parameters.AddWithValue("$d", Json.Ser(record));
+        record.Id = Convert.ToInt64(cmd.ExecuteScalar());
+        return Task.FromResult(record);
+    }
+
+    public Task UpdateAsync(DeploymentRecord record, CancellationToken ct = default)
+    {
+        using var c = _db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "UPDATE deployments SET data = $d WHERE id = $id";
+        cmd.Parameters.AddWithValue("$id", record.Id);
+        cmd.Parameters.AddWithValue("$d", Json.Ser(record));
+        cmd.ExecuteNonQuery();
+        return Task.CompletedTask;
+    }
+}
+
 public sealed class SqliteSettingsRepository : ISettingsRepository
 {
     private readonly AppDatabase _db;
