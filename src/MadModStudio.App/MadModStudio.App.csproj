@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>MadModStudio.App</RootNamespace>
+    <AssemblyName>MadModStudio</AssemblyName>
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="AvalonEdit" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MadModStudio.Core\MadModStudio.Core.csproj" />
+    <ProjectReference Include="..\MadModStudio.Persistence\MadModStudio.Persistence.csproj" />
+    <ProjectReference Include="..\MadModStudio.Game7DTD\MadModStudio.Game7DTD.csproj" />
+    <ProjectReference Include="..\MadModStudio.ModAnalysis\MadModStudio.ModAnalysis.csproj" />
+    <ProjectReference Include="..\MadModStudio.Compiler\MadModStudio.Compiler.csproj" />
+    <ProjectReference Include="..\MadModStudio.Packaging\MadModStudio.Packaging.csproj" />
+    <ProjectReference Include="..\MadModStudio.AI\MadModStudio.AI.csproj" />
+  </ItemGroup>
+</Project>

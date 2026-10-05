@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MadModStudio.Core\MadModStudio.Core.csproj" />
+    <ProjectReference Include="..\..\src\MadModStudio.Packaging\MadModStudio.Packaging.csproj" />
+    <ProjectReference Include="..\..\src\MadModStudio.Game7DTD\MadModStudio.Game7DTD.csproj" />
+  </ItemGroup>
+</Project>

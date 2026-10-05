@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+TestResults/
+*.db
+*.db-shm
+*.db-wal
+secrets.json
+*.apikey

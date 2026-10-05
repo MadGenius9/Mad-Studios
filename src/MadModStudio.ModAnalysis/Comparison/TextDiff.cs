@@ -1,0 +1,60 @@
+using System.Text;
+using DiffPlex;
+using DiffPlex.DiffBuilder;
+using DiffPlex.DiffBuilder.Model;
+
+namespace MadModStudio.ModAnalysis.Comparison;
+
+public static class TextDiff
+{
+    /// <summary>Produces a unified diff (like `git diff`) with the given amount of context.</summary>
+    public static (string Diff, int Added, int Removed) Unified(string oldText, string newText, string oldName, string newName, int context = 3)
+    {
+        var model = InlineDiffBuilder.Diff(oldText, newText, ignoreWhiteSpace: false, ignoreCase: false);
+        var lines = model.Lines;
+        var added = lines.Count(l => l.Type == ChangeType.Inserted);
+        var removed = lines.Count(l => l.Type == ChangeType.Deleted);
+        if (added == 0 && removed == 0) return ("", 0, 0);
+
+        var sb = new StringBuilder();
+        sb.Append("--- ").AppendLine(oldName);
+        sb.Append("+++ ").AppendLine(newName);
+
+        // Track old/new line numbers for each inline line.
+        var oldNo = new int[lines.Count];
+        var newNo = new int[lines.Count];
+        int o = 0, n = 0;
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (lines[i].Type != ChangeType.Inserted) o++;
+            if (lines[i].Type != ChangeType.Deleted) n++;
+            oldNo[i] = o;
+            newNo[i] = n;
+        }
+
+        var changed = Enumerable.Range(0, lines.Count).Where(i => lines[i].Type is ChangeType.Inserted or ChangeType.Deleted).ToList();
+        var idx = 0;
+        while (idx < changed.Count)
+        {
+            var start = Math.Max(0, changed[idx] - context);
+            var end = Math.Min(lines.Count - 1, changed[idx] + context);
+            while (idx + 1 < changed.Count && changed[idx + 1] - context <= end + 1)
+            {
+                idx++;
+                end = Math.Min(lines.Count - 1, changed[idx] + context);
+            }
+            idx++;
+            var oldStart = lines[start].Type == ChangeType.Inserted ? oldNo[start] + 1 : oldNo[start];
+            var newStart = lines[start].Type == ChangeType.Deleted ? newNo[start] + 1 : newNo[start];
+            var oldCount = Enumerable.Range(start, end - start + 1).Count(i => lines[i].Type != ChangeType.Inserted);
+            var newCount = Enumerable.Range(start, end - start + 1).Count(i => lines[i].Type != ChangeType.Deleted);
+            sb.AppendLine($"@@ -{oldStart},{oldCount} +{newStart},{newCount} @@");
+            for (var i = start; i <= end; i++)
+            {
+                var prefix = lines[i].Type switch { ChangeType.Inserted => '+', ChangeType.Deleted => '-', _ => ' ' };
+                sb.Append(prefix).AppendLine(lines[i].Text);
+            }
+        }
+        return (sb.ToString(), added, removed);
+    }
+}

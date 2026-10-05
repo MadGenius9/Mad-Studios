@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>MadModStudio.Game7DTD</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MadModStudio.Core\MadModStudio.Core.csproj" />
+    <ProjectReference Include="..\MadModStudio.ModAnalysis\MadModStudio.ModAnalysis.csproj" />
+    <ProjectReference Include="..\MadModStudio.Compiler\MadModStudio.Compiler.csproj" />
+    <ProjectReference Include="..\MadModStudio.Packaging\MadModStudio.Packaging.csproj" />
+  </ItemGroup>
+</Project>
