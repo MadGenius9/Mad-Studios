@@ -1,3 +1,7 @@
+using MadModStudio.AI;
+using MadModStudio.AI.Engines;
+using MadModStudio.AI.Providers;
+using MadModStudio.AI.Secrets;
 using MadModStudio.Core;
 using MadModStudio.Core.Models;
 using MadModStudio.Core.Pipeline;
@@ -43,6 +47,11 @@ public static class CliApp
           mms diagnose <projectId> [--log <file>]... [--working <zip|folder>]
           mms compare <oldModFolder> <newModFolder>
           mms scan <modsFolder> [--profile <id>]
+          mms ai-key set <key> | ai-key status       (stores via the platform secret store)
+          mms ai-plan "<request>" --yes [--profile <id>]
+          mms ai-repair <projectId> --yes [--attempts N] [--log <file>]... [--working <zip|folder>]
+
+        AI commands send data to the configured AI provider; --yes confirms you accept that.
 
         Data folder: %LOCALAPPDATA%\MadModStudio (override with MADMODSTUDIO_HOME).
         """;
@@ -57,8 +66,11 @@ public static class CliApp
         var services = new ServiceCollection();
         services.AddLogging(b => b.AddSimpleConsole(o => o.SingleLine = true).SetMinimumLevel(
             Environment.GetEnvironmentVariable("MMS_VERBOSE") == "1" ? LogLevel.Debug : LogLevel.Warning));
-        services.AddPersistence(new AppPaths());
+        var sp0Paths = new AppPaths();
+        services.AddPersistence(sp0Paths);
         services.AddGame7DTD();
+        services.AddAI(sp0Paths);
+        services.AddSingleton<IAIConsentService>(new CliConsent(args.Contains("--yes")));
         await using var sp = services.BuildServiceProvider();
 
         try
@@ -77,6 +89,9 @@ public static class CliApp
                 "diagnose" => await Diagnose(sp, args),
                 "compare" => Compare(sp, args),
                 "scan" => await Scan(sp, args),
+                "ai-key" => AiKey(sp, args),
+                "ai-plan" => await AiPlan(sp, args),
+                "ai-repair" => await AiRepair(sp, args),
                 _ => Fail($"Unknown command '{args[0]}'.\n\n{Usage}"),
             };
         }
@@ -339,6 +354,80 @@ public static class CliApp
         foreach (var r in rows)
             Console.WriteLine($"{Trunc(r.Name, 32),-32} {r.Version,-10} {r.Type,-14} {r.XmlCount,4} {r.DllCount,4} {r.Errors,4} {r.Warnings,5}  {r.Status}{(r.Error != null ? " — " + r.Error : "")}");
         return 0;
+    }
+
+    private static int AiKey(IServiceProvider sp, string[] args)
+    {
+        var secrets = sp.GetRequiredService<ISecretStore>();
+        switch (args.ElementAtOrDefault(1))
+        {
+            case "set":
+                var key = args.ElementAtOrDefault(2) ?? throw new ArgumentException("Missing key.");
+                try { secrets.Set(AnthropicProvider.SecretName, key); }
+                catch (NotSupportedException ex) { return Fail(ex.Message + " Set the ANTHROPIC_API_KEY environment variable instead."); }
+                Console.WriteLine($"Key stored ({secrets.Description}).");
+                return 0;
+            default:
+                Console.WriteLine(sp.GetRequiredService<IAIProvider>().IsConfigured ? $"An API key is available ({secrets.Description})." : "No API key configured.");
+                return 0;
+        }
+    }
+
+    private static IProgress<AIEvent> AiProgress() => new AiConsoleProgress();
+
+    private static async Task<int> AiPlan(IServiceProvider sp, string[] args)
+    {
+        var request = args.ElementAtOrDefault(1) ?? throw new ArgumentException("Missing request text.");
+        await sp.GetRequiredService<AIOptions>().LoadAsync(sp.GetRequiredService<MadModStudio.Core.Abstractions.ISettingsRepository>());
+        var profile = await ResolveProfile(sp, args);
+        var r = await sp.GetRequiredService<AIModBuilder>().PlanAsync(request, profile, AiProgress());
+        if (r.Plan is null) return Fail(r.Error ?? "No plan.");
+        Console.WriteLine($"Classification: {r.Plan.Classification}\n{r.Plan.Reasoning}\n");
+        foreach (var (s, i) in r.Plan.Steps.Select((s, i) => (s, i))) Console.WriteLine($"{i + 1}. {s}");
+        Console.WriteLine("Verified game APIs: " + string.Join(", ", r.Plan.GameApis));
+        foreach (var risk in r.Plan.Risks) Console.WriteLine("Risk: " + risk);
+        return 0;
+    }
+
+    private static async Task<int> AiRepair(IServiceProvider sp, string[] args)
+    {
+        var project = await ResolveProject(sp, args.ElementAtOrDefault(1) ?? "");
+        var options = sp.GetRequiredService<AIOptions>();
+        await options.LoadAsync(sp.GetRequiredService<MadModStudio.Core.Abstractions.ISettingsRepository>());
+        Diagnosis? diagnosis = null;
+        var logs = Opts(args, "--log").ToList();
+        if (logs.Count > 0 || Opt(args, "--working") != null)
+        {
+            var inputs = new RepairInputs { WorkingVersionPath = Opt(args, "--working") };
+            foreach (var l in logs) inputs.Logs.Add((l, l.Contains("server", StringComparison.OrdinalIgnoreCase) ? "server" : "client"));
+            diagnosis = await sp.GetRequiredService<RepairService>().DiagnoseAsync(project, inputs);
+        }
+        var attempts = int.TryParse(Opt(args, "--attempts"), out var n) ? n : options.MaxAutoRepairAttempts;
+        var outcome = await sp.GetRequiredService<AIRepairEngine>().RepairAsync(project, new RepairRequestOptions { MaxAttempts = attempts, Diagnosis = diagnosis }, AiProgress());
+        foreach (var a in outcome.Attempts)
+            Console.WriteLine($"Attempt {a.Number}: {a.Summary}\n  {string.Join(", ", a.ChangedFiles)} → compile {(a.CompileSucceededAfter ? "OK" : "failed")}");
+        Console.WriteLine(outcome.StopReason);
+        return outcome.Succeeded ? 0 : 2;
+    }
+
+    private sealed class CliConsent : IAIConsentService
+    {
+        private readonly bool _yes;
+        public CliConsent(bool yes) => _yes = yes;
+        public Task<bool> ConfirmAsync(AIEgressNotice notice, CancellationToken ct = default)
+        {
+            Console.WriteLine($"{notice.Operation} may send to {notice.ProviderName} ({notice.Destination}): {string.Join("; ", notice.DataCategories)}");
+            if (!_yes) Console.Error.WriteLine("Refusing without --yes.");
+            return Task.FromResult(_yes);
+        }
+    }
+
+    private sealed class AiConsoleProgress : IProgress<AIEvent>
+    {
+        public void Report(AIEvent e)
+        {
+            if (e.Kind != AIEventKind.Thinking) Console.WriteLine($"[{e.Kind}] {e.Message}");
+        }
     }
 
     private static string Trunc(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";

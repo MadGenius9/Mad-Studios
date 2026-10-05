@@ -145,9 +145,21 @@ public sealed class ModBuildPipeline
             {
                 ct.ThrowIfCancellationRequested();
                 Emit(PipelineStage.Compile, StageStatus.Running, $"Compiling {unit.AssemblyName} ({unit.SourceFiles.Count} file(s), {options.Configuration})...");
-                var modLocal = Directory.Exists(project.ModRootPath)
+                var modLocal = (Directory.Exists(project.ModRootPath)
                     ? Directory.GetFiles(project.ModRootPath, "*.dll", SearchOption.AllDirectories).Concat(unit.LocalReferencePaths)
-                    : unit.LocalReferencePaths;
+                    : unit.LocalReferencePaths).ToList();
+                // A bundled DLL that declares the same types as this source is a stale build of it, not a dependency:
+                // referencing it would cause ambiguous-type errors.
+                var declared = SourceTypeScanner.DeclaredTypeNames(unit.SourceFiles);
+                foreach (var dll in modLocal.ToList())
+                {
+                    var r = new MadModStudio.ModAnalysis.Assemblies.AssemblyInspector().Inspect(dll, new MadModStudio.ModAnalysis.Assemblies.AssemblyInspectionOptions { IncludeMembers = false, ComputeHash = false, CollectExternalReferences = false });
+                    if (!r.Success || Path.GetFileNameWithoutExtension(dll).Equals(unit.AssemblyName, StringComparison.OrdinalIgnoreCase)) continue;
+                    var overlap = r.Types.Select(t => t.FullName).Where(declared.Contains).Take(3).ToList();
+                    if (overlap.Count == 0) continue;
+                    modLocal.Remove(dll);
+                    Emit(PipelineStage.Compile, StageStatus.Warning, $"{Path.GetRelativePath(project.ModRootPath, dll)} declares types that are also in the source ({string.Join(", ", overlap)}); it looks like an old build and was not referenced. It is still included in the package — delete it if it is obsolete.");
+                }
                 var refs = _references.Resolve(profile, modLocal, options.AdditionalReferences.Concat(project.AdditionalReferencePaths), excludeAssemblyName: unit.AssemblyName);
                 var outDir = Path.Combine(ws.Build, "compile", options.Configuration.ToString(), unit.AssemblyName);
                 if (Directory.Exists(outDir)) FileUtil.DeleteDirectory(outDir);

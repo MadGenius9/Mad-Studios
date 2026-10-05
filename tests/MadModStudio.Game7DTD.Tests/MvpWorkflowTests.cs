@@ -184,3 +184,28 @@ public sealed class SyncProgress<T> : IProgress<T>
     public SyncProgress(Action<T> action) => _action = action;
     public void Report(T value) => _action(value);
 }
+
+public class StaleDllTests
+{
+    [Fact]
+    public async Task Old_build_with_different_name_is_not_referenced()
+    {
+        using var host = new TestHost();
+        var profiles = host.Get<GameProfileService>();
+        var profile = (await profiles.CreateProfileAsync(FakeGame.Shared)).Profile!;
+        var src = FakeGame.TempDir("stale");
+        var root = SampleMod.WriteFolder(src);
+        // Simulate an old build of the same code shipped under another file name.
+        var refs = FakeGame.BclFiles()
+            .Append(Path.Combine(FakeGame.ManagedPath(FakeGame.Shared), "Assembly-CSharp.dll"))
+            .Append(FakeGame.HarmonyPath(FakeGame.Shared))
+            .Select(f => (Microsoft.CodeAnalysis.MetadataReference)Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(f));
+        FakeGame.Compile("MadWorkingRacks_Old", new[] { SampleMod.InitSource, SampleMod.PatchSource }, refs, Path.Combine(root, "MadWorkingRacks_Old.dll"));
+        var project = (await host.Get<ProjectService>().ImportAsync(root, profile.Id)).Single().Project;
+
+        var result = await host.Get<ModBuildPipeline>().RunAsync(project, new BuildOptions { Package = false });
+
+        Assert.True(result.CompileSucceeded, string.Join("\n", result.AllDiagnostics));
+        Assert.Contains(result.Events, e => e.Status == StageStatus.Warning && e.Message.Contains("MadWorkingRacks_Old.dll") && e.Message.Contains("old build"));
+    }
+}
