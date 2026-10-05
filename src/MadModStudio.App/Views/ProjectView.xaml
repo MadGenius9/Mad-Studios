@@ -260,6 +260,36 @@
                                 <TextBox Text="{Binding LastPackagePath, Mode=OneWay}" IsReadOnly="True" FontFamily="{StaticResource MonoFont}" MinWidth="420" Margin="0,0,8,0" />
                                 <Button Content="Open Folder" Command="{Binding OpenOutputFolderCommand}" />
                             </StackPanel>
+                            <Border Style="{StaticResource Card}" Margin="0,4,0,8">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button Content="Deploy to Game" Style="{StaticResource AccentButton}" Command="{Binding DeployToGameCommand}"
+                                                    ToolTip="Copies the latest clean package into the game's Mods folder. An existing folder is backed up first." />
+                                            <Button Content="Undo Last Deployment" Command="{Binding UndoDeploymentCommand}" />
+                                        </StackPanel>
+                                        <TextBlock Text="Deploy to Game" Style="{StaticResource H2}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,6"
+                                               Text="Only runs when you click it, only writes inside the profile's Mods folder, never while the game is running. Undo restores whatever was there before." />
+                                    <ItemsControl ItemsSource="{Binding Deployments}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <DockPanel Margin="0,2">
+                                                    <Button DockPanel.Dock="Right" Content="Undo" Padding="8,2"
+                                                            Command="{Binding DataContext.UndoDeploymentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"
+                                                            Visibility="{Binding IsUndone, Converter={StaticResource InvBoolToVis}}" />
+                                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                                        <Run Text="{Binding DeployedUtc, Mode=OneWay, Converter={StaticResource LocalTime}}" Foreground="{StaticResource TextDimBrush}" />
+                                                        <Run Text="{Binding Version, Mode=OneWay}" FontWeight="SemiBold" />
+                                                        <Run Text="{Binding TargetPath, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="11" />
+                                                    </TextBlock>
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
                             <TextBlock Text="Compiler output" Style="{StaticResource Label}" />
                         </StackPanel>
                         <TextBox Text="{Binding CompilerLog, Mode=OneWay}" Style="{StaticResource ReadOnlyMono}" />

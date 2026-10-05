@@ -188,7 +188,7 @@
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="Coming Soon" Style="{StaticResource H2}" Margin="0,0,0,4" />
-                    <TextBlock Style="{StaticResource Dim}" Text="Deploy to Game · GitHub sync. These are not available yet." />
+                    <TextBlock Style="{StaticResource Dim}" Text="GitHub sync. This is not available yet." />
                 </StackPanel>
             </Border>
         </StackPanel>

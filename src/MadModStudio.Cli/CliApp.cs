@@ -13,6 +13,7 @@ using MadModStudio.Core.Pipeline;
 using MadModStudio.Core.Validation;
 using MadModStudio.Game7DTD;
 using MadModStudio.Game7DTD.Build;
+using MadModStudio.Game7DTD.Deploy;
 using MadModStudio.Game7DTD.Install;
 using MadModStudio.Game7DTD.Logs;
 using MadModStudio.Game7DTD.Mods;
@@ -48,6 +49,9 @@ public static class CliApp
           mms inspect-dll <path> [--decompile <TypeFullName>]
           mms build <projectId> [--version <x.y.z>] [--debug] [--package-with-errors] [--no-package]
           mms history <projectId>
+          mms deploy <projectId> [--package <zip>]   copy the latest clean package into the game's Mods folder
+          mms deploy list <projectId>
+          mms deploy undo <projectId> [--force]       undo the newest active deployment (restores the backup)
           mms logs <logFile>
           mms diagnose <projectId> [--log <file>]... [--working <zip|folder>]
           mms compare <oldModFolder> <newModFolder>
@@ -102,6 +106,7 @@ public static class CliApp
                 "inspect-dll" => InspectDll(args),
                 "build" => await Build(sp, args),
                 "history" => await History(sp, args),
+                "deploy" => await Deploy(sp, args),
                 "logs" => Logs(sp, args),
                 "diagnose" => await Diagnose(sp, args),
                 "compare" => Compare(sp, args),
@@ -110,7 +115,7 @@ public static class CliApp
                 _ => Fail($"Unknown command '{args[0]}'.\n\n{Usage}"),
             };
         }
-        catch (Exception ex) when (ex is ImportException or IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is ImportException or DeployException or IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
         {
             return Fail(ex.Message);
         }
@@ -318,6 +323,36 @@ public static class CliApp
         foreach (var f in result.PackageFindings.Where(f => f.Severity != Severity.Pass)) Console.WriteLine($"  {f.Severity} [{f.ValidatorId}] {f.Message}");
         Console.WriteLine(result.Summary);
         return result.Succeeded ? 0 : 2;
+    }
+
+    private static async Task<int> Deploy(IServiceProvider sp, string[] args)
+    {
+        var deploy = sp.GetRequiredService<ModDeployService>();
+        var sub = args.ElementAtOrDefault(1);
+        var project = await ResolveProject(sp, sub is "list" or "undo" ? args.ElementAtOrDefault(2) ?? "" : sub ?? "");
+        var profile = project.GameProfileId is { } pid ? await sp.GetRequiredService<GameProfileService>().GetAsync(pid) : null;
+        if (sub == "list")
+        {
+            var all = await deploy.ListAsync(project);
+            if (all.Count == 0) Console.WriteLine("No deployments.");
+            foreach (var d in all)
+                Console.WriteLine($"{d.Id,4}  {d.DeployedUtc.LocalDateTime:g}  {d.Version,-10} {(d.IsUndone ? "UNDONE" : "ACTIVE"),-7} {d.TargetPath}{(d.BackupPath != null ? "  (backup kept)" : "")}");
+            return 0;
+        }
+        if (profile is null) return Fail("The project has no game profile.");
+        if (sub == "undo")
+        {
+            var latest = (await deploy.ListAsync(project)).FirstOrDefault(d => !d.IsUndone);
+            if (latest is null) return Fail("No active deployment to undo.");
+            var r = await deploy.UndoAsync(latest, profile, Flag(args, "--force"));
+            foreach (var f in r.ModifiedFiles) Console.WriteLine("  changed: " + f);
+            Console.WriteLine(r.Message);
+            return r.Undone ? 0 : 2;
+        }
+        var result = await deploy.DeployAsync(project, profile, Opt(args, "--package"));
+        foreach (var w in result.Warnings) Console.WriteLine("  WARNING: " + w);
+        Console.WriteLine(result.Message);
+        return 0;
     }
 
     private static async Task<int> History(IServiceProvider sp, string[] args)

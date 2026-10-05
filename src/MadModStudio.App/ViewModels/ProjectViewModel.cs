@@ -10,6 +10,7 @@ using MadModStudio.Core.Models;
 using MadModStudio.Core.Pipeline;
 using MadModStudio.Core.Validation;
 using MadModStudio.Game7DTD.Build;
+using MadModStudio.Game7DTD.Deploy;
 using MadModStudio.Game7DTD.Install;
 using MadModStudio.Game7DTD.Mods;
 using MadModStudio.Game7DTD.Projects;
@@ -54,6 +55,7 @@ public sealed partial class ProjectViewModel : PageViewModel
     private readonly DecompilerService _decompiler;
     private readonly VersionComparer _comparer;
     private readonly RepairService _repair;
+    private readonly ModDeployService _deploy;
     private readonly IDialogService _dialogs;
 
     [ObservableProperty] private ModProject? _project;
@@ -88,7 +90,7 @@ public sealed partial class ProjectViewModel : PageViewModel
     [ObservableProperty] private string _compilerLog = "";
 
     public ProjectViewModel(ProjectService projects, GameProfileService profiles, ModAnalyzer analyzer, ModBuildPipeline pipeline,
-        AssemblyInspector inspector, DecompilerService decompiler, VersionComparer comparer, RepairService repair, AgentsViewModel agents, IDialogService dialogs)
+        AssemblyInspector inspector, DecompilerService decompiler, VersionComparer comparer, RepairService repair, ModDeployService deploy, AgentsViewModel agents, IDialogService dialogs)
     {
         _projects = projects;
         _profiles = profiles;
@@ -98,6 +100,7 @@ public sealed partial class ProjectViewModel : PageViewModel
         _decompiler = decompiler;
         _comparer = comparer;
         _repair = repair;
+        _deploy = deploy;
         Agents = agents;
         _dialogs = dialogs;
         foreach (var (stage, name) in new[] { (PipelineStage.Analyze, "Analyze"), (PipelineStage.GenerateOrRepair, "Generate / Repair"), (PipelineStage.Compile, "Compile"), (PipelineStage.Validate, "Validate"), (PipelineStage.Package, "Package") })
@@ -118,6 +121,7 @@ public sealed partial class ProjectViewModel : PageViewModel
     public ObservableCollection<ValidationFinding> Findings { get; } = new();
     public ObservableCollection<RevisionRecord> Revisions { get; } = new();
     public ObservableCollection<BuildRecord> Builds { get; } = new();
+    public ObservableCollection<DeploymentRecord> Deployments { get; } = new();
     public ObservableCollection<HarmonyPatchInfo> HarmonyPatches { get; } = new();
     public ObservableCollection<string> LogDiagnosis { get; } = new();
     public ObservableCollection<string> AttachedLogs { get; } = new();
@@ -196,6 +200,8 @@ public sealed partial class ProjectViewModel : PageViewModel
         if (Project is null) return;
         Revisions.Clear();
         foreach (var r in await _projects.History.ListAsync(Project)) Revisions.Add(r);
+        Deployments.Clear();
+        foreach (var d in await _deploy.ListAsync(Project)) Deployments.Add(d);
     }
 
     // ---------------- Files / editor ----------------
@@ -451,6 +457,45 @@ public sealed partial class ProjectViewModel : PageViewModel
         _savedText = EditorDocument.Text;
         IsDirty = false;
     }
+
+    // ---------------- Deploy to Game ----------------
+
+    /// <summary>Copies the latest clean package into the game's Mods folder (explicit user action, backed up, undoable).</summary>
+    [RelayCommand]
+    private Task DeployToGame() => RunAsync("Deploying to game...", async () =>
+    {
+        if (Project is null) return;
+        if (Profile is null) { ErrorMessage = "Select a Game Profile for this project first (Overview tab)."; return; }
+        var build = await _deploy.LatestDeployableBuildAsync(Project);
+        if (build is null) { ErrorMessage = "No clean package to deploy. Build Package first: only builds that compiled, validated and packaged without errors can be deployed."; return; }
+        var mods = Profile.ModsPath ?? Path.Combine(Profile.InstallPath, "Mods");
+        if (!_dialogs.Confirm("Deploy to Game",
+                $"Copy {Path.GetFileName(build.PackagePath)} into\n{mods}?\n\nIf a {Project.ModFolderName} folder is already there it is backed up first, and you can undo this deployment at any time.")) return;
+        var project = Project;
+        var profile = Profile;
+        var result = await Task.Run(() => _deploy.DeployAsync(project, profile));
+        StatusMessage = result.Message + (result.Warnings.Count > 0 ? "  WARNING: " + string.Join("  ", result.Warnings) : "");
+        await ReloadHistoryAsync();
+    });
+
+    [RelayCommand]
+    private Task UndoDeployment(DeploymentRecord? record) => RunAsync("Undoing deployment...", async () =>
+    {
+        if (Project is null || Profile is null) return;
+        record ??= Deployments.FirstOrDefault(d => !d.IsUndone);
+        if (record is null) { ErrorMessage = "There is no active deployment to undo."; return; }
+        if (!_dialogs.Confirm("Undo deployment", $"Remove the deployed {Path.GetFileName(record.TargetPath)} ({record.Version}) from the game's Mods folder" +
+                (record.BackupPath != null ? " and restore the folder that was there before?" : "?"))) return;
+        var profile = Profile;
+        var target = record;
+        var r = await Task.Run(() => _deploy.UndoAsync(target, profile));
+        if (!r.Undone && r.ModifiedFiles.Count > 0
+            && _dialogs.Confirm("Files changed in the game folder",
+                $"{r.ModifiedFiles.Count} deployed file(s) were changed after deployment:\n{string.Join("\n", r.ModifiedFiles.Take(10))}\n\nDiscard those changes and undo anyway?"))
+            r = await Task.Run(() => _deploy.UndoAsync(target, profile, force: true));
+        if (r.Undone) StatusMessage = r.Message; else ErrorMessage = r.Message;
+        await ReloadHistoryAsync();
+    });
 
     [RelayCommand]
     private void OpenOutputFolder()
