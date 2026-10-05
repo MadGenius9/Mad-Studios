@@ -5,6 +5,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+    <PackageReference Include="Anthropic" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MadModStudio.Core\MadModStudio.Core.csproj" />

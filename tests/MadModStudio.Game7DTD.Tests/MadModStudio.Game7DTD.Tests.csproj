@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\MadModStudio.Core\MadModStudio.Core.csproj" />
     <ProjectReference Include="..\..\src\MadModStudio.Game7DTD\MadModStudio.Game7DTD.csproj" />
+    <ProjectReference Include="..\..\src\MadModStudio.AI\MadModStudio.AI.csproj" />
     <ProjectReference Include="..\..\src\MadModStudio.ModAnalysis\MadModStudio.ModAnalysis.csproj" />
     <ProjectReference Include="..\..\src\MadModStudio.Compiler\MadModStudio.Compiler.csproj" />
     <ProjectReference Include="..\..\src\MadModStudio.Packaging\MadModStudio.Packaging.csproj" />
