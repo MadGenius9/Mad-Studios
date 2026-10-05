@@ -1,9 +1,22 @@
-﻿<Application x:Class="MadModStudio.App.App"
+<Application x:Class="MadModStudio.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:MadModStudio.App"
-             StartupUri="MainWindow.xaml">
+             xmlns:conv="clr-namespace:MadModStudio.App.Converters"
+             ShutdownMode="OnMainWindowClose">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Theme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+            <conv:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True" />
+            <conv:NullToVisibilityConverter x:Key="NullToVis" />
+            <conv:NullToVisibilityConverter x:Key="InvNullToVis" Invert="True" />
+            <conv:InverseBoolConverter x:Key="InverseBool" />
+            <conv:StatusBrushConverter x:Key="StatusBrush" />
+            <conv:StatusTextConverter x:Key="StatusText" />
+            <conv:LocalTimeConverter x:Key="LocalTime" />
+            <conv:JoinConverter x:Key="Join" />
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

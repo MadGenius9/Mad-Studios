@@ -50,14 +50,16 @@ public sealed class AIRepairEngine
     private readonly ProjectService _projects;
     private readonly GameProfileService _profiles;
     private readonly ILogger<AIRepairEngine> _log;
+    private readonly AIOptions _options;
 
-    public AIRepairEngine(IAIProvider provider, IAIConsentService consent, ModBuildPipeline pipeline, ProjectService projects, GameProfileService profiles, ILogger<AIRepairEngine>? log = null)
+    public AIRepairEngine(IAIProvider provider, IAIConsentService consent, ModBuildPipeline pipeline, ProjectService projects, GameProfileService profiles, AIOptions? options = null, ILogger<AIRepairEngine>? log = null)
     {
         _provider = provider;
         _consent = consent;
         _pipeline = pipeline;
         _projects = projects;
         _profiles = profiles;
+        _options = options ?? new AIOptions();
         _log = log ?? NullLogger<AIRepairEngine>.Instance;
     }
 
@@ -127,7 +129,7 @@ public sealed class AIRepairEngine
                 {(options.Diagnosis != null ? "\nA diagnosis report, attached logs and a version diff are available via tools." : "")}
                 {(string.IsNullOrWhiteSpace(options.UserInstructions) ? "" : "\nUser instructions: " + options.UserInstructions)}
                 """;
-            var ai = await _provider.RunAsync(new AIRunRequest { SystemPrompt = AIPrompts.Repair(profile), UserMessage = message, Effort = "high" }, toolbox, progress, ct).ConfigureAwait(false);
+            var ai = await _provider.RunAsync(new AIRunRequest { SystemPrompt = AIPrompts.Repair(profile), UserMessage = message, Effort = "high", Model = _options.Model }, toolbox, progress, ct).ConfigureAwait(false);
             attempt.AIResult = ai;
             if (!ai.Success && toolbox.Proposal is null)
             {

@@ -1,0 +1,51 @@
+<UserControl x:Class="MadModStudio.App.Views.BatchScannerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:MadModStudio.App.Views">
+    <DockPanel Margin="32,24">
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Text="Batch Scanner" Style="{StaticResource H1}" />
+            <views:PageStatusBar />
+            <DockPanel Margin="0,0,0,10">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="Browse…" Command="{Binding BrowseCommand}" Margin="8,0,8,0" />
+                    <Button Content="Scan Mods Folder" Style="{StaticResource AccentButton}" Command="{Binding ScanCommand}" />
+                    <Button Content="Repair All Safe Fixes (Coming Soon)" IsEnabled="False" />
+                </StackPanel>
+                <TextBox Text="{Binding ModsFolder, UpdateSourceTrigger=PropertyChanged}" />
+            </DockPanel>
+            <TextBlock Text="{Binding ProgressText}" Style="{StaticResource Dim}" Margin="0,0,0,8" />
+        </StackPanel>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="3*" />
+                <RowDefinition Height="6" />
+                <RowDefinition Height="2*" />
+            </Grid.RowDefinitions>
+            <DataGrid ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Mod" Binding="{Binding Name}" Width="2*" />
+                    <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="90" />
+                    <DataGridTextColumn Header="Type" Binding="{Binding Type, Converter={StaticResource StatusText}}" Width="110" />
+                    <DataGridTextColumn Header="XML" Binding="{Binding XmlCount}" Width="50" />
+                    <DataGridTextColumn Header="DLL" Binding="{Binding DllCount}" Width="50" />
+                    <DataGridTextColumn Header="Errors" Binding="{Binding Errors}" Width="60" />
+                    <DataGridTextColumn Header="Warnings" Binding="{Binding Warnings}" Width="75" />
+                    <DataGridTemplateColumn Header="Compatibility Status" Width="200">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Status, Converter={StaticResource StatusText}}" Foreground="{Binding Status, Converter={StaticResource StatusBrush}}" FontWeight="SemiBold" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+            <GridSplitter Grid.Row="1" HorizontalAlignment="Stretch" Height="6" />
+            <DockPanel Grid.Row="2">
+                <Button DockPanel.Dock="Top" Content="Import Selected as Project" Command="{Binding ImportSelectedCommand}" HorizontalAlignment="Left" Margin="0,6,0,6"
+                        Visibility="{Binding Selected, Converter={StaticResource NullToVis}}" />
+                <TextBox Text="{Binding Details, Mode=OneWay}" Style="{StaticResource ReadOnlyMono}" TextWrapping="Wrap" />
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</UserControl>

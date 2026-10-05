@@ -24,6 +24,8 @@ public sealed class ModProject
     public EacCompatibility EacCompatibility { get; set; } = EacCompatibility.Unknown;
     public string? ImportedFrom { get; set; }
     public bool IncludeSourceInPackage { get; set; }
+    /// <summary>Extra DLLs (e.g. from dependency mods) referenced when compiling this project. Never packaged.</summary>
+    public List<string> AdditionalReferencePaths { get; set; } = new();
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset ModifiedUtc { get; set; } = DateTimeOffset.UtcNow;
 

@@ -148,7 +148,7 @@ public sealed class ModBuildPipeline
                 var modLocal = Directory.Exists(project.ModRootPath)
                     ? Directory.GetFiles(project.ModRootPath, "*.dll", SearchOption.AllDirectories).Concat(unit.LocalReferencePaths)
                     : unit.LocalReferencePaths;
-                var refs = _references.Resolve(profile, modLocal, options.AdditionalReferences, excludeAssemblyName: unit.AssemblyName);
+                var refs = _references.Resolve(profile, modLocal, options.AdditionalReferences.Concat(project.AdditionalReferencePaths), excludeAssemblyName: unit.AssemblyName);
                 var outDir = Path.Combine(ws.Build, "compile", options.Configuration.ToString(), unit.AssemblyName);
                 if (Directory.Exists(outDir)) FileUtil.DeleteDirectory(outDir);
                 var cr = await _compiler.CompileAsync(new CompileRequest

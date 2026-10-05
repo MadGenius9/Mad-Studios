@@ -1,0 +1,16 @@
+<UserControl x:Class="MadModStudio.App.Views.PageStatusBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <StackPanel Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" Margin="0,0,0,8">
+            <ProgressBar IsIndeterminate="True" />
+            <TextBlock Text="{Binding BusyText}" Style="{StaticResource Dim}" Margin="0,4,0,0" />
+        </StackPanel>
+        <Border Style="{StaticResource Notice}" BorderBrush="{StaticResource ErrorBrush}" Background="#FF2A1818"
+                Visibility="{Binding ErrorMessage, Converter={StaticResource NullToVis}}">
+            <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" Foreground="{StaticResource ErrorBrush}" />
+        </Border>
+        <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource Dim}" Margin="0,0,0,8"
+                   Visibility="{Binding StatusMessage, Converter={StaticResource NullToVis}}" />
+    </StackPanel>
+</UserControl>

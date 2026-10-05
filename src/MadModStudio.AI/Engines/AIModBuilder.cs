@@ -30,14 +30,16 @@ public sealed class AIModBuilder
     private readonly ProjectService _projects;
     private readonly GameProfileService _profiles;
     private readonly AIRepairEngine _repair;
+    private readonly AIOptions _options;
 
-    public AIModBuilder(IAIProvider provider, IAIConsentService consent, ProjectService projects, GameProfileService profiles, AIRepairEngine repair)
+    public AIModBuilder(IAIProvider provider, IAIConsentService consent, ProjectService projects, GameProfileService profiles, AIRepairEngine repair, AIOptions? options = null)
     {
         _provider = provider;
         _consent = consent;
         _projects = projects;
         _profiles = profiles;
         _repair = repair;
+        _options = options ?? new AIOptions();
     }
 
     public async Task<PlanResult> PlanAsync(string request, GameProfile? profile, IProgress<AIEvent>? progress = null, CancellationToken ct = default)
@@ -49,7 +51,7 @@ public sealed class AIModBuilder
         if (!await _consent.ConfirmAsync(notice, ct).ConfigureAwait(false)) return new PlanResult { Error = "Cancelled: you declined sending data to the AI provider." };
 
         var toolbox = new ModToolbox(null, null, index, profile, allowProposals: false, allowPlan: true);
-        var ai = await _provider.RunAsync(new AIRunRequest { SystemPrompt = AIPrompts.Plan(profile), UserMessage = request, Effort = "high" }, toolbox, progress, ct).ConfigureAwait(false);
+        var ai = await _provider.RunAsync(new AIRunRequest { SystemPrompt = AIPrompts.Plan(profile), UserMessage = request, Effort = "high", Model = _options.Model }, toolbox, progress, ct).ConfigureAwait(false);
         if (toolbox.Plan is null)
             return new PlanResult { AIResult = ai, Error = ai.Error ?? "The AI did not submit a plan." + (string.IsNullOrWhiteSpace(ai.FinalText) ? "" : " " + ai.FinalText) };
         return new PlanResult { Plan = toolbox.Plan, AIResult = ai };
@@ -70,13 +72,13 @@ public sealed class AIModBuilder
             {string.Join("\n", plan.Steps.Select((s, i) => $"{i + 1}. {s}"))}
             Verified game APIs: {string.Join(", ", plan.GameApis)}
             """;
-        var ai = await _provider.RunAsync(new AIRunRequest { SystemPrompt = AIPrompts.Generate(profile), UserMessage = message, Effort = "high", MaxTokens = 64000 }, toolbox, progress, ct).ConfigureAwait(false);
+        var ai = await _provider.RunAsync(new AIRunRequest { SystemPrompt = AIPrompts.Generate(profile), UserMessage = message, Effort = "high", MaxTokens = 64000, Model = _options.Model }, toolbox, progress, ct).ConfigureAwait(false);
         if (toolbox.Proposal is null || toolbox.Proposal.Edits.Count == 0)
             return new GenerationResult { AIResult = ai, Error = ai.Error ?? "The AI did not produce any files." };
 
         await _projects.ApplyEditsAsync(project, toolbox.Proposal.Edits, "AI generation", toolbox.Proposal.Summary, ct).ConfigureAwait(false);
         progress?.Report(AIEvent.Now(AIEventKind.Info, $"Wrote {toolbox.Proposal.Edits.Count} file(s). Compiling and validating..."));
-        var repair = await _repair.RepairAsync(project, new RepairRequestOptions(), progress, ct).ConfigureAwait(false);
+        var repair = await _repair.RepairAsync(project, new RepairRequestOptions { MaxAttempts = _options.MaxAutoRepairAttempts }, progress, ct).ConfigureAwait(false);
         return new GenerationResult
         {
             Applied = true,

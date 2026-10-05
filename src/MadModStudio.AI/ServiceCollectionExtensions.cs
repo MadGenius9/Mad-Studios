@@ -12,6 +12,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddAI(this IServiceCollection services, AppPaths paths)
     {
         services.AddSingleton<ISecretStore>(_ => CompositeSecretStore.CreateDefault(paths.Secrets));
+        services.AddSingleton<AIOptions>();
         services.AddSingleton<AnthropicProvider>();
         services.AddSingleton<IAIProvider>(sp => sp.GetRequiredService<AnthropicProvider>());
         services.AddSingleton<AIRepairEngine>();

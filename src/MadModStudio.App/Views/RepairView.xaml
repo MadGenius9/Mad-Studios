@@ -1,0 +1,72 @@
+<UserControl x:Class="MadModStudio.App.Views.RepairView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:MadModStudio.App.Views">
+    <Grid Margin="32,24">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="420" />
+            <ColumnDefinition Width="16" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="Repair Mod" Style="{StaticResource H1}" />
+                <views:PageStatusBar />
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Broken mod (required)" Style="{StaticResource H2}" Margin="0,0,0,6" />
+                        <TextBox Text="{Binding BrokenPath, UpdateSourceTrigger=PropertyChanged}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Content="ZIP…" Command="{Binding BrowseBrokenZipCommand}" />
+                            <Button Content="Folder…" Command="{Binding BrowseBrokenFolderCommand}" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" Text="The original is copied into a new project workspace and never modified." />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Logs (optional)" Style="{StaticResource H2}" Margin="0,0,0,6" />
+                        <ListBox ItemsSource="{Binding Logs}" SelectedItem="{Binding SelectedLog}" DisplayMemberPath="Display" Height="80" />
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Content="Add Client Log" Command="{Binding AddClientLogCommand}" />
+                            <Button Content="Add Server Log" Command="{Binding AddServerLogCommand}" />
+                            <Button Content="Remove" Command="{Binding RemoveLogCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Last known working version (optional)" Style="{StaticResource H2}" Margin="0,0,0,6" />
+                        <TextBox Text="{Binding WorkingPath, UpdateSourceTrigger=PropertyChanged}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Content="ZIP…" Command="{Binding BrowseWorkingZipCommand}" />
+                            <Button Content="Folder…" Command="{Binding BrowseWorkingFolderCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Additional dependency mods (optional)" Style="{StaticResource H2}" Margin="0,0,0,6" />
+                        <ListBox ItemsSource="{Binding DependencyMods}" Height="56" />
+                        <Button Content="Add Dependency Mod Folder" Command="{Binding AddDependencyModCommand}" HorizontalAlignment="Left" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Diagnose" Style="{StaticResource AccentButton}" Command="{Binding DiagnoseCommand}" />
+                    <Button Content="Open Project" Command="{Binding OpenProjectCommand}" Visibility="{Binding Project, Converter={StaticResource NullToVis}}" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+        <DockPanel Grid.Column="2">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,4,0,8">
+                <TextBlock Text="Diagnosis" Style="{StaticResource H2}" Margin="0,0,16,0" />
+                <Button Content="AI Repair" Style="{StaticResource AccentButton}" Command="{Binding AIRepairCommand}"
+                        Visibility="{Binding Project, Converter={StaticResource NullToVis}}" IsEnabled="{Binding IsAIConfigured}"
+                        ToolTip="Sends diagnostics, relevant files and log excerpts to the AI provider after you confirm. Creates a revision before every change." />
+                <Button Content="Cancel" Command="{Binding CancelCommand}" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+            </StackPanel>
+            <ListBox DockPanel.Dock="Bottom" ItemsSource="{Binding Events}" Height="160" FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="0,8,0,0" />
+            <TextBox Text="{Binding DiagnosisText, Mode=OneWay}" Style="{StaticResource ReadOnlyMono}" />
+        </DockPanel>
+    </Grid>
+</UserControl>
