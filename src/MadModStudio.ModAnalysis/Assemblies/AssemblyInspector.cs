@@ -11,6 +11,8 @@ public sealed class AssemblyInspectionOptions
 {
     /// <summary>Include private/internal members (useful for mods; may be skipped for huge game assemblies).</summary>
     public bool IncludeNonPublic { get; init; } = true;
+    /// <summary>When non-public members are excluded, still include protected ones (callable from derived types in mods).</summary>
+    public bool IncludeProtected { get; init; } = true;
     public bool IncludeMembers { get; init; } = true;
     public bool ComputeHash { get; init; } = true;
     public bool CollectExternalReferences { get; init; } = true;
@@ -244,7 +246,7 @@ public sealed class AssemblyInspector
                 isPublic = (am.Attributes & MethodAttributes.MemberAccessMask) == MethodAttributes.Public;
                 isStatic = (am.Attributes & MethodAttributes.Static) != 0;
             }
-            if (!options.IncludeNonPublic && !isPublic) continue;
+            if (!options.IncludeNonPublic && !isPublic && !(options.IncludeProtected && !accessor.IsNil && IsProtected(reader.GetMethodDefinition(accessor).Attributes))) continue;
             string propType;
             try { propType = p.DecodeSignature(DisplayTypeProvider.Instance, typeCtx).ReturnType; }
             catch (BadImageFormatException) { propType = "?"; }
@@ -274,7 +276,9 @@ public sealed class AssemblyInspector
             var name = reader.GetString(f.Name);
             if (name.Contains('<')) continue; // backing fields
             var isPublic = (f.Attributes & FieldAttributes.FieldAccessMask) == FieldAttributes.Public;
-            if (!options.IncludeNonPublic && !isPublic) continue;
+            var fieldAccess = f.Attributes & FieldAttributes.FieldAccessMask;
+            var fieldProtected = fieldAccess is FieldAttributes.Family or FieldAttributes.FamORAssem;
+            if (!options.IncludeNonPublic && !isPublic && !(options.IncludeProtected && fieldProtected)) continue;
             string ft;
             try { ft = f.DecodeSignature(DisplayTypeProvider.Instance, typeCtx); }
             catch (BadImageFormatException) { ft = "?"; }
@@ -297,7 +301,7 @@ public sealed class AssemblyInspector
             var attrs = m.GetCustomAttributes().Select(a => MetadataNames.AttributeTypeName(reader, reader.GetCustomAttribute(a))).ToList();
             methodAttrs[mh] = attrs;
             if (accessorMethods.Contains(mh)) continue;
-            if (!options.IncludeNonPublic && !isPublic) continue;
+            if (!options.IncludeNonPublic && !isPublic && !(options.IncludeProtected && IsProtected(m.Attributes))) continue;
 
             var methodParams = m.GetGenericParameters().Select(g => reader.GetString(reader.GetGenericParameter(g).Name)).ToImmutableArray();
             var ctx = typeCtx with { MethodParameters = methodParams };
@@ -336,6 +340,12 @@ public sealed class AssemblyInspector
                 Attributes = attrs,
             });
         }
+    }
+
+    private static bool IsProtected(MethodAttributes a)
+    {
+        var access = a & MethodAttributes.MemberAccessMask;
+        return access is MethodAttributes.Family or MethodAttributes.FamORAssem;
     }
 
     private static void DetectHarmonyPatches(MetadataReader reader, TypeDefinitionHandle th, TypeDefinition td, TypeReport type, AssemblyReport report)

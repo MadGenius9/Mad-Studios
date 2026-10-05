@@ -111,8 +111,18 @@ public sealed class AnthropicProvider : IAIProvider
 
             var assistant = new List<BetaContentBlockParam>();
             var results = new List<BetaContentBlockParam>();
-            foreach (var block in response.Content)
+            // After a mid-output refusal fallback, model-internal blocks before the last fallback marker belong to the
+            // declined attempt and must not be echoed; text blocks echo normally and the marker itself is dropped.
+            var lastFallback = -1;
+            for (var i = 0; i < response.Content.Count; i++)
+                if (response.Content[i].TryPickFallback(out _)) lastFallback = i;
+            if (lastFallback >= 0) progress?.Report(AIEvent.Now(AIEventKind.Info, "The request was re-served by the fallback model."));
+            for (var i = 0; i < response.Content.Count; i++)
             {
+                var block = response.Content[i];
+                var beforeBoundary = i < lastFallback;
+                if (block.TryPickFallback(out _)) continue;
+                if (beforeBoundary && !block.TryPickText(out _)) continue;
                 if (block.TryPickText(out var text))
                 {
                     assistant.Add(new BetaTextBlockParam { Text = text.Text });
