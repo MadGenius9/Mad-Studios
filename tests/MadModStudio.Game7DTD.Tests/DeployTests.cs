@@ -109,6 +109,23 @@ public class DeployTests
     }
 
     [Fact]
+    public async Task Newer_deployment_from_another_project_blocks_undo_even_when_forced()
+    {
+        var s = await BuildAsync();
+        using var _ = s.Host;
+        var first = (await s.Deploy.DeployAsync(s.Project, s.Profile)).Record!;
+        // A second project of the same mod (e.g. a fixed copy) deploys into the same folder.
+        var other = Assert.Single(await s.Host.Get<ProjectService>().ImportAsync(SampleMod.WriteZip(FakeGame.TempDir("inbox2"), "1.1.0"), s.Profile.Id)).Project;
+        Assert.True((await s.Host.Get<ModBuildPipeline>().RunAsync(other, new BuildOptions())).Succeeded);
+        var second = (await s.Deploy.DeployAsync(other, s.Profile)).Record!;
+
+        var refused = await s.Deploy.UndoAsync(first, s.Profile, force: true);
+        Assert.False(refused.Undone);
+        Assert.Contains("newer deployment", refused.Message);
+        Assert.Contains("1.1.0", File.ReadAllText(Path.Combine(second.TargetPath, "ModInfo.xml")));
+    }
+
+    [Fact]
     public async Task Refuses_while_the_game_is_running()
     {
         var s = await BuildAsync();

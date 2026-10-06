@@ -239,12 +239,18 @@ public sealed class SqliteDeploymentRepository : IDeploymentRepository
     private readonly AppDatabase _db;
     public SqliteDeploymentRepository(AppDatabase db) => _db = db;
 
-    public Task<IReadOnlyList<DeploymentRecord>> ListAsync(Guid projectId, CancellationToken ct = default)
+    public Task<IReadOnlyList<DeploymentRecord>> ListAsync(Guid projectId, CancellationToken ct = default) => Query(projectId);
+
+    public Task<IReadOnlyList<DeploymentRecord>> ListAllAsync(CancellationToken ct = default) => Query(null);
+
+    private Task<IReadOnlyList<DeploymentRecord>> Query(Guid? projectId)
     {
         using var c = _db.Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT id, data FROM deployments WHERE project_id = $p ORDER BY id DESC";
-        cmd.Parameters.AddWithValue("$p", projectId.ToString());
+        cmd.CommandText = projectId is null
+            ? "SELECT id, data FROM deployments ORDER BY id DESC"
+            : "SELECT id, data FROM deployments WHERE project_id = $p ORDER BY id DESC";
+        if (projectId is not null) cmd.Parameters.AddWithValue("$p", projectId.Value.ToString());
         var list = new List<DeploymentRecord>();
         using var r = cmd.ExecuteReader();
         while (r.Read())

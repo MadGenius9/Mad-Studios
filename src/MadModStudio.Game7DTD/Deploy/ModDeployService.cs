@@ -151,7 +151,8 @@ public sealed class ModDeployService
     public async Task<UndoResult> UndoAsync(DeploymentRecord record, GameProfile profile, bool force = false, CancellationToken ct = default)
     {
         if (record.IsUndone) return new UndoResult { Message = "This deployment was already undone." };
-        var newer = (await _deployments.ListAsync(record.ProjectId, ct).ConfigureAwait(false))
+        // Any project may have deployed into the same folder since (e.g. a batch safe fix of the same mod).
+        var newer = (await _deployments.ListAllAsync(ct).ConfigureAwait(false))
             .FirstOrDefault(d => d.Id > record.Id && !d.IsUndone && string.Equals(d.TargetPath, record.TargetPath, StringComparison.OrdinalIgnoreCase));
         if (newer != null)
             return new UndoResult { Message = $"A newer deployment ({newer.Version}, {newer.DeployedUtc.LocalDateTime:g}) replaced this one. Undo that one first." };

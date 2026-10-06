@@ -34,6 +34,8 @@ public interface IBuildRecordRepository
 public interface IDeploymentRepository
 {
     Task<IReadOnlyList<DeploymentRecord>> ListAsync(Guid projectId, CancellationToken ct = default);
+    /// <summary>All deployments of every project, newest first.</summary>
+    Task<IReadOnlyList<DeploymentRecord>> ListAllAsync(CancellationToken ct = default);
     Task<DeploymentRecord> AddAsync(DeploymentRecord record, CancellationToken ct = default);
     Task UpdateAsync(DeploymentRecord record, CancellationToken ct = default);
 }
