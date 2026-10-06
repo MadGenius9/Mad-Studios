@@ -46,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ModBuildPipeline>();
         services.AddSingleton<LogParser>();
         services.AddSingleton<RepairService>();
+        services.AddSingleton<SafeFixService>();
         services.AddSingleton<BatchModScanner>();
         services.AddSingleton<ModDeployService>();
 

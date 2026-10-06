@@ -10,7 +10,10 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="Browse…" Command="{Binding BrowseCommand}" Margin="8,0,8,0" />
                     <Button Content="Scan Mods Folder" Style="{StaticResource AccentButton}" Command="{Binding ScanCommand}" />
-                    <Button Content="Repair All Safe Fixes (Coming Soon)" IsEnabled="False" />
+                    <Button Content="Repair All Safe Fixes" Command="{Binding RepairAllSafeFixesCommand}" IsEnabled="{Binding HasSafeFixes}"
+                            ToolTip="Imports a copy of each mod with safe fixes, fixes it with a revision before and after, and rebuilds it. The Mods folder is not changed." />
+                    <Button Content="Deploy Fixed Mods" Command="{Binding DeployFixedModsCommand}" IsEnabled="{Binding HasFixedPackages}"
+                            ToolTip="Installs clean fixed copies into the Game Profile's Mods folder. Originals are backed up; each deployment can be undone." />
                 </StackPanel>
                 <TextBox Text="{Binding ModsFolder, UpdateSourceTrigger=PropertyChanged}" />
             </DockPanel>
@@ -24,13 +27,14 @@
             </Grid.RowDefinitions>
             <DataGrid ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Mod" Binding="{Binding Name}" Width="2*" />
-                    <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="90" />
-                    <DataGridTextColumn Header="Type" Binding="{Binding Type, Converter={StaticResource StatusText}}" Width="110" />
-                    <DataGridTextColumn Header="XML" Binding="{Binding XmlCount}" Width="50" />
-                    <DataGridTextColumn Header="DLL" Binding="{Binding DllCount}" Width="50" />
-                    <DataGridTextColumn Header="Errors" Binding="{Binding Errors}" Width="60" />
-                    <DataGridTextColumn Header="Warnings" Binding="{Binding Warnings}" Width="75" />
+                    <DataGridTextColumn Header="Mod" Binding="{Binding Name, Mode=OneWay}" Width="2*" />
+                    <DataGridTextColumn Header="Version" Binding="{Binding Version, Mode=OneWay}" Width="90" />
+                    <DataGridTextColumn Header="Type" Binding="{Binding Type, Mode=OneWay, Converter={StaticResource StatusText}}" Width="110" />
+                    <DataGridTextColumn Header="XML" Binding="{Binding XmlCount, Mode=OneWay}" Width="50" />
+                    <DataGridTextColumn Header="DLL" Binding="{Binding DllCount, Mode=OneWay}" Width="50" />
+                    <DataGridTextColumn Header="Errors" Binding="{Binding Errors, Mode=OneWay}" Width="60" />
+                    <DataGridTextColumn Header="Warnings" Binding="{Binding Warnings, Mode=OneWay}" Width="75" />
+                    <DataGridTextColumn Header="Safe Fixes" Binding="{Binding SafeFixText, Mode=OneWay}" Width="90" />
                     <DataGridTemplateColumn Header="Compatibility Status" Width="200">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -38,6 +42,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Safe Fix Result" Binding="{Binding FixStatus, Mode=OneWay}" Width="2*" />
                 </DataGrid.Columns>
             </DataGrid>
             <GridSplitter Grid.Row="1" HorizontalAlignment="Stretch" Height="6" />

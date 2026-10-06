@@ -37,6 +37,7 @@ src/
                              file ownership, approvals, escalation, second opinions), secret storage (DPAPI)
   MadModStudio.App           WPF desktop app (MVVM, CommunityToolkit.Mvvm, AvalonEdit, DI)
   MadModStudio.Cli           `mms` headless front-end over the same services (scripting, CI, verification)
+.github/workflows/ci.yml     build + test on Windows and Linux, publish the desktop app artifact
 tests/
   MadModStudio.Core.Tests / Game7DTD.Tests / Compiler.Tests / Packaging.Tests
   Shared/FakeGame.cs         builds a synthetic install (stub Assembly-CSharp + Harmony compiled with Roslyn)
@@ -73,8 +74,11 @@ reference resolver against the same interfaces (`IGameKnowledgeIndex`, `IModVali
 | `config/model-profiles.json` | Editable model capability/pricing rules used by the router (created from defaults). |
 | `config/models-cache.json` | Last successful model discovery per provider (no secrets). |
 | `logs/` | Application logs (secrets redacted). |
+| `deployments/<project>/<timestamp>/backup/` | Copies of game mod folders replaced by Deploy to Game (used by Undo). |
 
-The live game `Mods` folder is never written to. "Deploy to Game" is planned as an explicit, user-initiated action.
+The live game `Mods` folder is only ever written by **Deploy to Game**, an explicit user action (see below). Game
+assemblies are read fully into memory (Roslyn references, decompiler) so no handle or memory map keeps the game's
+`Managed` folder locked — a regression test checks this.
 
 ## Game profile and knowledge index
 
@@ -136,6 +140,26 @@ missing types/methods/fields, Harmony, XML, XPath, assembly loading, null refere
 groups with project files (file names, XPaths, Harmony patch classes/targets, stack-frame types), compare with the
 last working version (`VersionComparer`: files, unified diffs, DLL metadata diffs), and check the mod against the
 current game index. It produces "LIKELY REGRESSION" conclusions and proposed actions as text.
+
+## Deploy to Game (`Game7DTD/Deploy`)
+
+`ModDeployService` installs the newest clean package (compiled, validated, packaged without errors) into the game
+profile's Mods folder. The package is extracted with `SafeZip` and must contain exactly one mod folder with a valid
+ModInfo.xml; the folder name is checked so nothing can be written outside Mods. An existing folder is copied to a
+backup first, and a SHA-256 manifest of the deployed files is recorded (`deployments` table). Deploying refuses while
+a `7DaysToDie*` process runs. Undo removes the deployed folder and restores the backup; it refuses when deployed files
+were edited afterwards (unless forced) or when a newer deployment of the same folder is still active. Duplicate mod
+names elsewhere in Mods produce a warning.
+
+## Safe fixes (`Game7DTD/Repair/SafeFixService`)
+
+Mechanical fixes with exactly one correct outcome: `config` → `Config` folder case, legacy `<ModInfo>` wrapper →
+current layout, missing ModInfo Name (from the folder name) or Version (placeholder 1.0.0), and creating a missing
+ModInfo.xml for a folder with content. Anything needing judgement (wrong folder hierarchy, malformed XML, bundled
+Harmony, renaming mod identifiers) is reported only. `Plan` is read-only; fixes are applied to an imported Repair
+project between "Before safe fixes" / "Safe fixes applied" revisions and verified by the real build pipeline. A
+folder that has not changed since it was fixed reuses its earlier project. Clean results can be installed with
+Deploy to Game.
 
 ## AI layer (multi-model, multi-agent)
 

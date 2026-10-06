@@ -55,7 +55,10 @@ public static class CliApp
           mms logs <logFile>
           mms diagnose <projectId> [--log <file>]... [--working <zip|folder>]
           mms compare <oldModFolder> <newModFolder>
-          mms scan <modsFolder> [--profile <id>]
+          mms scan <modsFolder> [--profile <id>]   read-only scan (lists available safe fixes)
+          mms safe-fix <modsFolder> [--profile <id>] [--deploy]
+                                                   fix copies of mods as projects (folder untouched); --deploy installs
+                                                   clean results into the profile's Mods folder (backup + undo)
 
         AI (multi-provider, multi-agent):
           mms ai providers                         provider status (never "Connected" without a real test)
@@ -111,6 +114,7 @@ public static class CliApp
                 "diagnose" => await Diagnose(sp, args),
                 "compare" => Compare(sp, args),
                 "scan" => await Scan(sp, args),
+                "safe-fix" => await SafeFix(sp, args),
                 "ai" => await Ai(sp, args),
                 _ => Fail($"Unknown command '{args[0]}'.\n\n{Usage}"),
             };
@@ -400,10 +404,55 @@ public static class CliApp
         var folder = args.ElementAtOrDefault(1) ?? throw new ArgumentException("Missing Mods folder.");
         var profile = await ResolveProfile(sp, args);
         var rows = await sp.GetRequiredService<BatchModScanner>().ScanAsync(folder, profile);
-        Console.WriteLine($"{"Mod",-32} {"Version",-10} {"Type",-14} {"XML",4} {"DLL",4} {"Err",4} {"Warn",5}  Status");
+        Console.WriteLine($"{"Mod",-32} {"Version",-10} {"Type",-14} {"XML",4} {"DLL",4} {"Err",4} {"Warn",5} {"Fixes",5}  Status");
         foreach (var r in rows)
-            Console.WriteLine($"{Trunc(r.Name, 32),-32} {r.Version,-10} {r.Type,-14} {r.XmlCount,4} {r.DllCount,4} {r.Errors,4} {r.Warnings,5}  {r.Status}{(r.Error != null ? " — " + r.Error : "")}");
+        {
+            var fixes = SafeFixService.Plan(r.FolderPath);
+            Console.WriteLine($"{Trunc(r.Name, 32),-32} {r.Version,-10} {r.Type,-14} {r.XmlCount,4} {r.DllCount,4} {r.Errors,4} {r.Warnings,5} {fixes.Count,5}  {r.Status}{(r.Error != null ? " — " + r.Error : "")}");
+            foreach (var f in fixes) Console.WriteLine($"    safe fix: {f.Description}");
+        }
         return 0;
+    }
+
+    private static async Task<int> SafeFix(IServiceProvider sp, string[] args)
+    {
+        var folder = args.ElementAtOrDefault(1) ?? throw new ArgumentException("Missing Mods folder.");
+        if (!Directory.Exists(folder)) return Fail($"Mods folder not found: {folder}");
+        var profile = await ResolveProfile(sp, args);
+        var deploy = Flag(args, "--deploy");
+        if (deploy)
+        {
+            if (profile is null) return Fail("--deploy needs a game profile.");
+            var profileMods = Path.GetFullPath(profile.ModsPath ?? Path.Combine(profile.InstallPath, "Mods")).TrimEnd(Path.DirectorySeparatorChar);
+            if (!string.Equals(profileMods, Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+                return Fail($"--deploy only installs into the profile's Mods folder ({profileMods}).");
+        }
+        var fixer = sp.GetRequiredService<SafeFixService>();
+        var deployer = sp.GetRequiredService<ModDeployService>();
+        var targets = Directory.GetDirectories(folder).Where(d => SafeFixService.Plan(d).Count > 0).OrderBy(d => d, StringComparer.OrdinalIgnoreCase).ToList();
+        if (targets.Count == 0) { Console.WriteLine("No safe fixes apply to any mod in this folder."); return 0; }
+        var failures = 0;
+        foreach (var dir in targets)
+        {
+            var r = await fixer.FixCopyAsync(dir, profile?.Id);
+            Console.WriteLine($"{Path.GetFileName(dir)}:");
+            foreach (var f in r.Applied) Console.WriteLine($"  fixed: {f.Description}");
+            if (r.Error != null) { Console.WriteLine($"  FAILED: {r.Error}"); failures++; continue; }
+            Console.WriteLine($"  project {r.Project!.Id}{(r.Reused ? " (reused: folder unchanged since it was fixed)" : "")}: {r.Build?.Summary}");
+            if (!r.Packaged) { failures++; continue; }
+            if (deploy)
+            {
+                try
+                {
+                    var d = await deployer.DeployAsync(r.Project, profile!);
+                    foreach (var w in d.Warnings) Console.WriteLine("  WARNING: " + w);
+                    Console.WriteLine("  " + d.Message);
+                }
+                catch (DeployException ex) { Console.WriteLine("  deploy failed: " + ex.Message); failures++; }
+            }
+        }
+        Console.WriteLine(deploy ? "Undo any deployment with: mms deploy undo <projectId>" : "The Mods folder was not modified. Re-run with --deploy to install the clean results (backup + undo).");
+        return failures == 0 ? 0 : 2;
     }
 
     private static async Task<int> Ai(IServiceProvider sp, string[] args)
