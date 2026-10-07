@@ -27,10 +27,21 @@ An AI-assisted development, repair, validation, compilation, versioning and pack
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design.
 
+## Install (Windows)
+
+Download **MadModStudio-Setup-&lt;version&gt;-x64** from the latest successful
+[CI run](https://github.com/MadGenius9/Mad-Studios/actions/workflows/ci.yml) (Artifacts section), unzip it and run
+the setup. The .NET runtime is included — nothing else needs to be installed. It installs for your user without admin
+rights (choose "all users" in the setup to install machine-wide) and adds a Start menu shortcut. A portable ZIP is
+published next to it. Uninstalling keeps your projects and settings in `%LOCALAPPDATA%\MadModStudio`.
+
+The installer is built by `build/installer/MadModStudio.iss` (Inno Setup 6) from a self-contained `win-x64` publish;
+CI installs it silently, starts the app, checks it reached "Startup complete" in its log, and uninstalls it.
+
 ## Requirements
 
 * Windows 10/11 for the desktop app
-* [.NET 10 SDK](https://dotnet.microsoft.com/download) to build
+* [.NET 10 SDK](https://dotnet.microsoft.com/download) to build from source (not needed to run the installer)
 * A local 7 Days to Die installation (game or dedicated server)
 * Optional: an API key for at least one AI provider (or a local OpenAI-compatible server)
 
