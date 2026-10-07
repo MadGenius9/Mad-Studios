@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:MadModStudio.App.ViewModels"
         xmlns:views="clr-namespace:MadModStudio.App.Views"
-        Title="Mad Mod Studio" Icon="/Assets/MadModStudio.ico" Width="1440" Height="900" MinWidth="1100" MinHeight="700"
+        Title="Mad Mod Studio" Icon="pack://application:,,,/MadModStudio;component/Assets/MadModStudio.ico" Width="1440" Height="900" MinWidth="1100" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource Bg0Brush}" Foreground="{StaticResource TextBrush}"
         FontFamily="{StaticResource UiFont}" FontSize="13">
