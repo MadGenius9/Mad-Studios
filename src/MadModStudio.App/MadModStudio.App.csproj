@@ -6,7 +6,15 @@
     <RootNamespace>MadModStudio.App</RootNamespace>
     <AssemblyName>MadModStudio</AssemblyName>
     <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+    <ApplicationIcon>Assets\MadModStudio.ico</ApplicationIcon>
+    <!-- The UI is English-only: don't ship framework translations in self-contained builds. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Product>Mad Mod Studio</Product>
+    <Description>Mad Mod Studio — 7 Days to Die mod development environment</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\MadModStudio.ico" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="AvalonEdit" />

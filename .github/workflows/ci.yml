@@ -49,8 +49,8 @@ jobs:
           path: TestResults
           if-no-files-found: ignore
 
-  publish-app:
-    name: Publish desktop app
+  package:
+    name: Installer & portable app
     needs: build-test
     runs-on: windows-latest
     steps:
@@ -60,11 +60,67 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Publish
-        run: dotnet publish src/MadModStudio.App -c Release -r win-x64 --self-contained false -o publish/MadModStudio
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $v = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          "value=$v" >> $env:GITHUB_OUTPUT
 
-      - name: Upload app
+      # Self-contained: the .NET runtime ships with the app, nothing else needs to be installed.
+      - name: Publish (self-contained, win-x64)
+        run: dotnet publish src/MadModStudio.App -c Release -r win-x64 --self-contained true -o publish/MadModStudio
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Host }
+          & $iscc /Q "/DAppVersion=${{ steps.version.outputs.value }}" "/DSourceDir=$PWD\publish\MadModStudio" "/DOutputDir=$PWD\publish\installer" build\installer\MadModStudio.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+          Get-ChildItem publish\installer | Format-Table Name, Length
+
+      # Install silently, start the installed app with a throw-away data folder, check its log, uninstall.
+      - name: Install, launch and uninstall (smoke test)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem publish\installer\*.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "MadModStudioInstall"
+          Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER","/DIR=`"$dir`"" -Wait
+          $exe = Join-Path $dir "MadModStudio.exe"
+          if (-not (Test-Path $exe)) { throw "MadModStudio.exe was not installed" }
+
+          $env:MADMODSTUDIO_HOME = Join-Path $env:RUNNER_TEMP "mms-smoke-home"
+          $p = Start-Process $exe -PassThru
+          $log = $null
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 1
+            $log = Get-ChildItem "$env:MADMODSTUDIO_HOME\logs\*.log" -ErrorAction SilentlyContinue | Get-Content -Raw -ErrorAction SilentlyContinue
+            if ($log -match "Startup complete" -or $log -match "Startup failed" -or $p.HasExited) { break }
+          }
+          if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          Write-Host $log
+          if ($log -notmatch "Startup complete") { throw "The installed app did not start cleanly (see log above)." }
+
+          $uninstaller = Get-ChildItem $dir\unins*.exe | Select-Object -First 1
+          Start-Process $uninstaller.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path $exe) { throw "Uninstall left MadModStudio.exe behind" }
+
+      - name: Zip portable build
+        shell: pwsh
+        run: Compress-Archive -Path publish\MadModStudio\* -DestinationPath "publish\MadModStudio-portable-${{ steps.version.outputs.value }}-x64.zip"
+
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: MadModStudio-win-x64
-          path: publish/MadModStudio
+          name: MadModStudio-Setup-${{ steps.version.outputs.value }}-x64
+          path: publish/installer/*.exe
+          compression-level: 0
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: MadModStudio-portable-${{ steps.version.outputs.value }}-x64
+          path: publish/MadModStudio-portable-*.zip
+          compression-level: 0

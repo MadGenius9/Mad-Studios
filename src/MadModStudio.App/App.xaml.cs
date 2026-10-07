@@ -41,6 +41,7 @@ public partial class App : Application
             MainWindow = window;
             window.Show();
             await main.InitializeAsync();
+            _log.LogInformation("Startup complete");
         }
         catch (Exception ex)
         {
