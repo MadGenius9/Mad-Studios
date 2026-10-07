@@ -35,6 +35,7 @@
                     <DataGridTextColumn Header="Errors" Binding="{Binding Errors, Mode=OneWay}" Width="60" />
                     <DataGridTextColumn Header="Warnings" Binding="{Binding Warnings, Mode=OneWay}" Width="75" />
                     <DataGridTextColumn Header="Safe Fixes" Binding="{Binding SafeFixText, Mode=OneWay}" Width="90" />
+                    <DataGridTextColumn Header="Conflicts" Binding="{Binding ConflictText, Mode=OneWay}" Width="75" />
                     <DataGridTemplateColumn Header="Compatibility Status" Width="200">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -46,11 +47,42 @@
                 </DataGrid.Columns>
             </DataGrid>
             <GridSplitter Grid.Row="1" HorizontalAlignment="Stretch" Height="6" />
-            <DockPanel Grid.Row="2">
-                <Button DockPanel.Dock="Top" Content="Import Selected as Project" Command="{Binding ImportSelectedCommand}" HorizontalAlignment="Left" Margin="0,6,0,6"
-                        Visibility="{Binding Selected, Converter={StaticResource NullToVis}}" />
-                <TextBox Text="{Binding Details, Mode=OneWay}" Style="{StaticResource ReadOnlyMono}" TextWrapping="Wrap" />
-            </DockPanel>
+            <TabControl Grid.Row="2" Margin="0,4,0,0">
+                <TabItem Header="Details">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Top" Content="Import Selected as Project" Command="{Binding ImportSelectedCommand}" HorizontalAlignment="Left" Margin="0,6,0,6"
+                                Visibility="{Binding Selected, Converter={StaticResource NullToVis}}" />
+                        <TextBox Text="{Binding Details, Mode=OneWay}" Style="{StaticResource ReadOnlyMono}" TextWrapping="Wrap" />
+                    </DockPanel>
+                </TabItem>
+                <TabItem>
+                    <TabItem.Header>
+                        <TextBlock><Run Text="Conflicts (" /><Run Text="{Binding Conflicts.Count, Mode=OneWay}" /><Run Text=")" /></TextBlock>
+                    </TabItem.Header>
+                    <DataGrid ItemsSource="{Binding Conflicts}">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Severity" Width="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Severity, Converter={StaticResource StatusText}}" Foreground="{Binding Severity, Converter={StaticResource StatusBrush}}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Conflict" Width="2*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate><TextBlock Text="{Binding Summary}" TextWrapping="Wrap" /></DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Details" Width="3*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate><TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Foreground="{StaticResource TextDimBrush}" /></DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="File" Binding="{Binding File, Mode=OneWay}" Width="140" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </TabItem>
+            </TabControl>
         </Grid>
     </DockPanel>
 </UserControl>

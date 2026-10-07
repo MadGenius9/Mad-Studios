@@ -13,6 +13,10 @@ An AI-assisted development, repair, validation, compilation, versioning and pack
 * Repair Mode: correlate client/server logs and a last-known-working version with the mod and the current game.
 * Deploy to Game: install a clean package into the game's Mods folder on request — the previous folder is backed up
   and every deployment can be undone.
+* Conflict detection: finds installed mods that patch the same game XML value, remove what another mod patches, add
+  the same named block/item, Harmony-patch the same method, bundle different versions of one DLL, share a mod Name or
+  disagree on localization text. XPaths are evaluated against your game's own XML, so differently written XPaths that
+  hit the same node are still caught. Deploy to Game warns when the mod you install conflicts with one already there.
 * Batch Scanner: scan a whole Mods folder read-only; "Repair All Safe Fixes" fixes imported copies (folder-name case,
   legacy ModInfo layout, missing ModInfo fields) with revisions, rebuilds them, and can deploy the clean results.
 * AI (optional, bring your own keys): Anthropic, OpenAI, Google Gemini, xAI or any OpenAI-compatible endpoint. A team

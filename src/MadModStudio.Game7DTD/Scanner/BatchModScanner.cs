@@ -87,4 +87,8 @@ public sealed class BatchModScanner
         progress?.Report((roots.Count, roots.Count, ""));
         return results;
     }
+
+    /// <summary>Conflicts between the scanned mods (XML patches checked against the profile's game config).</summary>
+    public static IReadOnlyList<ModConflict> FindConflicts(IReadOnlyList<ScannedMod> mods, GameProfile? profile, CancellationToken ct = default) =>
+        ModConflictAnalyzer.Analyze(mods.Select(m => new ConflictInput(m.FolderPath, m.Name, m.Analysis)).ToList(), profile?.ConfigPath, ct);
 }

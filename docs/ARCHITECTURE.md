@@ -151,6 +151,18 @@ a `7DaysToDie*` process runs. Undo removes the deployed folder and restores the 
 were edited afterwards (unless forced) or when a newer deployment of the same folder is still active. Duplicate mod
 names elsewhere in Mods produce a warning.
 
+## Mod conflicts (`Game7DTD/Scanner/ModConflictAnalyzer`)
+
+Read-only, deterministic analysis across all mods of a Mods folder, reported in folder-name (load) order:
+XML `set`/`setattribute`/`removeattribute` on the same game value (Warning, or Info when the values agree), `remove` of a
+node another mod patches, two mods appending a definition with the same element and `name`, Harmony patches on the
+same method (Warning when a prefix or transpiler is involved, Info for postfixes only), one assembly name shipped by
+several mods (Warning when versions differ), duplicate ModInfo Names (Error) and localization keys with different
+text. XPaths are evaluated against the profile's game Config XML and compared by the selected node, so different
+spellings of the same target match; without game XML only identical XPaths are compared. The Batch Scanner shows a
+Conflicts tab and per-mod counts, `mms scan` prints them, and Deploy to Game adds XML/localization conflicts that
+involve the deployed mod to its warnings.
+
 ## Safe fixes (`Game7DTD/Repair/SafeFixService`)
 
 Mechanical fixes with exactly one correct outcome: `config` → `Config` folder case, legacy `<ModInfo>` wrapper →

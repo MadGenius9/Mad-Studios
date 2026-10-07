@@ -179,6 +179,21 @@ public class DeployTests
         Assert.Contains(result.Warnings, w => w.Contains("OldCopyOfRacks"));
     }
 
+    [Fact]
+    public async Task Warns_when_the_deployed_mod_conflicts_with_an_installed_mod()
+    {
+        var s = await BuildAsync();
+        using var _ = s.Host;
+        s.Profile.ConfigPath = Path.Combine(FakeGame.Shared, "Data", "Config");
+        // The sample mod appends <block name="madWorkingRack">; another installed mod adds the same block.
+        var other = Path.Combine(s.Mods, "ZZ_OtherRacks", "Config");
+        Directory.CreateDirectory(other);
+        File.WriteAllText(Path.Combine(other, "blocks.xml"), File.ReadAllText(Path.Combine(s.Project.ModRootPath, "Config", "blocks.xml")));
+
+        var result = await s.Deploy.DeployAsync(s.Project, s.Profile);
+        Assert.Contains(result.Warnings, w => w.StartsWith("Conflict:") && w.Contains("ZZ_OtherRacks") && w.Contains("madWorkingRack"));
+    }
+
     [Theory]
     [InlineData("..")]
     [InlineData("../escape")]

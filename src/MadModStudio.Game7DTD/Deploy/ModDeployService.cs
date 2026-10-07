@@ -5,6 +5,7 @@ using MadModStudio.Core.Abstractions;
 using MadModStudio.Core.IO;
 using MadModStudio.Core.Models;
 using MadModStudio.Game7DTD.Mods;
+using MadModStudio.Game7DTD.Scanner;
 using Microsoft.Extensions.Logging;
 
 namespace MadModStudio.Game7DTD.Deploy;
@@ -132,6 +133,7 @@ public sealed class ModDeployService
                 Manifest = HashTree(target),
             }, ct).ConfigureAwait(false);
             _log.LogInformation("Deployed {Project} {Version} to {Target} (backup: {Backup})", project.Name, version, target, backup ?? "none");
+            result.Warnings.AddRange(ConflictsWithInstalledMods(modsPath, folderName, profile));
             result.Message = backup is null
                 ? $"Deployed {folderName} {version} to {target}."
                 : $"Deployed {folderName} {version} to {target}. The previous folder was backed up and can be restored with Undo.";
@@ -182,6 +184,24 @@ public sealed class ModDeployService
             ModifiedFiles = modified,
             Message = record.BackupPath != null ? $"Restored the previous {Path.GetFileName(target)} folder." : $"Removed {target} (nothing was there before the deployment).",
         };
+    }
+
+    /// <summary>XML and localization clashes between the deployed mod and the other mods in the Mods folder.</summary>
+    private IEnumerable<string> ConflictsWithInstalledMods(string modsPath, string folderName, GameProfile profile)
+    {
+        try
+        {
+            var inputs = Directory.GetDirectories(modsPath).Select(d => new ConflictInput(d, Path.GetFileName(d), null)).ToList();
+            return ModConflictAnalyzer.Analyze(inputs, profile.ConfigPath)
+                .Where(c => c.Severity != Severity.Info && c.Mods.Contains(folderName, StringComparer.OrdinalIgnoreCase))
+                .Select(c => $"Conflict: {c.Summary}. {c.Detail}")
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.LogWarning(ex, "Conflict check after deployment failed");
+            return Array.Empty<string>();
+        }
     }
 
     private static string ModsFolder(GameProfile profile)

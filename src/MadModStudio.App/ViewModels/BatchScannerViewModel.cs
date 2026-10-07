@@ -30,6 +30,8 @@ public sealed partial class ScanRow : ObservableObject
     public int Warnings => Mod.Warnings;
     public ScanStatus Status => Mod.Status;
     public string SafeFixText => SafeFixes.Count == 0 ? "—" : $"{SafeFixes.Count} available";
+    public List<ModConflict> Conflicts { get; } = new();
+    public string ConflictText => Conflicts.Count == 0 ? "—" : Conflicts.Count.ToString();
     [ObservableProperty] private SafeFixCopyResult? _fixResult;
     [ObservableProperty] private string _fixStatus = "";
 }
@@ -63,6 +65,7 @@ public sealed partial class BatchScannerViewModel : PageViewModel
     public override string Title => "Batch Scanner";
     public AppState State { get; }
     public ObservableCollection<ScanRow> Rows { get; } = new();
+    public ObservableCollection<ModConflict> Conflicts { get; } = new();
     public bool HasSafeFixes => Rows.Any(r => r.SafeFixes.Count > 0 && r.FixResult is null);
     public bool HasFixedPackages => Rows.Any(r => r.FixResult?.Packaged == true);
 
@@ -95,9 +98,17 @@ public sealed partial class BatchScannerViewModel : PageViewModel
         var folder = ModsFolder;
         var profile = State.CurrentProfile;
         var rows = await Task.Run(() => _scanner.ScanAsync(folder, profile, progress));
-        foreach (var r in rows) Rows.Add(new ScanRow(r));
+        var conflicts = await Task.Run(() => BatchModScanner.FindConflicts(rows, profile));
+        Conflicts.Clear();
+        foreach (var c in conflicts) Conflicts.Add(c);
+        foreach (var r in rows)
+        {
+            var row = new ScanRow(r);
+            row.Conflicts.AddRange(conflicts.Where(c => c.Mods.Contains(Path.GetFileName(r.FolderPath), StringComparer.OrdinalIgnoreCase)));
+            Rows.Add(row);
+        }
         var fixable = Rows.Count(r => r.SafeFixes.Count > 0);
-        StatusMessage = $"{rows.Count} mod(s): {rows.Count(r => r.Status == ScanStatus.Broken)} broken, {rows.Count(r => r.Status == ScanStatus.Warning)} with warnings, {rows.Count(r => r.Status == ScanStatus.ClientRequirementDetected)} need client install, {fixable} with safe fixes." +
+        StatusMessage = $"{rows.Count} mod(s): {rows.Count(r => r.Status == ScanStatus.Broken)} broken, {rows.Count(r => r.Status == ScanStatus.Warning)} with warnings, {rows.Count(r => r.Status == ScanStatus.ClientRequirementDetected)} need client install, {fixable} with safe fixes, {conflicts.Count(c => c.Severity != Severity.Info)} conflict(s) between mods." +
             (profile is null ? " No Game Profile selected: game-aware checks were skipped." : "");
         RefreshFixState();
         ProgressText = "Read-only scan: nothing in the Mods folder was modified.";
@@ -114,6 +125,12 @@ public sealed partial class BatchScannerViewModel : PageViewModel
             sb.AppendLine("SAFE FIXES (applied to an imported copy, never to this folder):");
             foreach (var f in row.SafeFixes) sb.AppendLine("  • " + f.Description);
             if (row.FixStatus.Length > 0) sb.AppendLine("  Result: " + row.FixStatus);
+            sb.AppendLine();
+        }
+        if (row.Conflicts.Count > 0)
+        {
+            sb.AppendLine("CONFLICTS WITH OTHER MODS:");
+            foreach (var c in row.Conflicts) sb.AppendLine($"  {c.Severity.ToString().ToUpperInvariant(),-7} {c.Summary}\n          {c.Detail}");
             sb.AppendLine();
         }
         sb.AppendLine($"{mod.Name} {mod.Version}");

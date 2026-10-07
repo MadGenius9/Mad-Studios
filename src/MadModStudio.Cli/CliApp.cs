@@ -411,7 +411,15 @@ public static class CliApp
             Console.WriteLine($"{Trunc(r.Name, 32),-32} {r.Version,-10} {r.Type,-14} {r.XmlCount,4} {r.DllCount,4} {r.Errors,4} {r.Warnings,5} {fixes.Count,5}  {r.Status}{(r.Error != null ? " — " + r.Error : "")}");
             foreach (var f in fixes) Console.WriteLine($"    safe fix: {f.Description}");
         }
-        return 0;
+        var conflicts = BatchModScanner.FindConflicts(rows, profile);
+        Console.WriteLine();
+        Console.WriteLine(conflicts.Count == 0 ? "No conflicts between mods." : $"Conflicts between mods ({conflicts.Count}):");
+        foreach (var c in conflicts)
+        {
+            Console.WriteLine($"  {c.Severity.ToString().ToUpperInvariant(),-7} {c.Summary}");
+            if (c.Detail.Length > 0) Console.WriteLine($"          {c.Detail}");
+        }
+        return conflicts.Any(c => c.Severity == Severity.Error) ? 2 : 0;
     }
 
     private static async Task<int> SafeFix(IServiceProvider sp, string[] args)
