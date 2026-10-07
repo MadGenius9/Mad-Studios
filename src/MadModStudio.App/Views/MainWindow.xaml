@@ -39,7 +39,7 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <RadioButton GroupName="Nav" Style="{StaticResource NavRadio}"
-                                         Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                         Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                          CommandParameter="{Binding Key}"
                                          Tag="{Binding Key}" Loaded="NavItem_Loaded">
                                 <StackPanel Orientation="Horizontal">

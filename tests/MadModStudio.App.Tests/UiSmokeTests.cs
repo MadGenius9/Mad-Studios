@@ -78,6 +78,7 @@ public class UiSmokeTests : IClassFixture<AppFixture>
     {
         await UiThread.RunAsync(async () =>
         {
+            await UiThread.SettleAsync();
             UiThread.BindingErrors.Take();
             var main = _app.Services.GetRequiredService<MainViewModel>();
             await main.InitializeAsync();
@@ -85,6 +86,7 @@ public class UiSmokeTests : IClassFixture<AppFixture>
             Assert.NotNull(main.CurrentPage);
             Assert.Null(main.CurrentPage!.ErrorMessage);
             UiThread.Render(Chrome(main));
+            await UiThread.SettleAsync();
         });
         AssertNoBindingErrors();
     }
@@ -94,6 +96,7 @@ public class UiSmokeTests : IClassFixture<AppFixture>
     {
         await UiThread.RunAsync(async () =>
         {
+            await UiThread.SettleAsync();
             UiThread.BindingErrors.Take();
             var main = _app.Services.GetRequiredService<MainViewModel>();
             await main.OpenProjectAsync(_app.Project.Id);
@@ -103,6 +106,7 @@ public class UiSmokeTests : IClassFixture<AppFixture>
             Assert.Equal(11, project.Agents.Team.Count);
             Assert.Contains("NOT CONFIGURED", project.Agents.AiAvailability); // no provider configured in tests
             UiThread.Render(Chrome(main));
+            await UiThread.SettleAsync();
         });
         AssertNoBindingErrors();
     }
@@ -112,6 +116,7 @@ public class UiSmokeTests : IClassFixture<AppFixture>
     {
         await UiThread.RunAsync(async () =>
         {
+            await UiThread.SettleAsync();
             UiThread.BindingErrors.Take();
             var main = _app.Services.GetRequiredService<MainViewModel>();
             await main.InitializeAsync();
@@ -123,6 +128,7 @@ public class UiSmokeTests : IClassFixture<AppFixture>
             Assert.NotEmpty(scanner.Rows);
             scanner.Selected = scanner.Rows[0];
             UiThread.Render(Chrome(main));
+            await UiThread.SettleAsync();
         });
         AssertNoBindingErrors();
     }

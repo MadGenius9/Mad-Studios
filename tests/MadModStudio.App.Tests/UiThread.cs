@@ -38,6 +38,13 @@ internal static class UiThread
 
     public static Task RunAsync(Func<Task> action) => Dispatcher.Value.InvokeAsync(action).Task.Unwrap();
 
+    /// <summary>Lets the dispatcher finish deferred work (late binding resolution reports its errors here).</summary>
+    public static async Task SettleAsync()
+    {
+        await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+    }
+
     /// <summary>Measures and arranges like a 1400×900 window, then selects every tab (recursively) so all tab content is created.</summary>
     public static void Render(FrameworkElement root)
     {
