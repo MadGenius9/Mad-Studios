@@ -31,36 +31,7 @@ public partial class App : Application
         try
         {
             var paths = new AppPaths();
-            var services = new ServiceCollection();
-            services.AddLogging(b =>
-            {
-                b.AddDebug();
-                b.AddProvider(new FileLoggerProvider(paths.Logs));
-                b.SetMinimumLevel(LogLevel.Information);
-            });
-            services.AddPersistence(paths);
-            services.AddGame7DTD();
-            services.AddAI(paths);
-            services.AddSingleton<IAIConsentService, WpfConsentService>();
-            // GUIDED control: agent changes wait in this queue until the user approves them in the Agents tab.
-            services.AddSingleton<ApprovalQueue>();
-            services.AddSingleton<IChangeApprovalService>(sp => sp.GetRequiredService<ApprovalQueue>());
-            services.AddSingleton<IDialogService, DialogService>();
-            services.AddSingleton<AppState>();
-            services.AddSingleton<MainViewModel>();
-            services.AddSingleton<INavigator>(sp => sp.GetRequiredService<MainViewModel>());
-            services.AddTransient<ImportWorkflow>();
-            services.AddTransient<HomeViewModel>();
-            services.AddTransient<NewModViewModel>();
-            services.AddTransient<RepairViewModel>();
-            services.AddTransient<MyModsViewModel>();
-            services.AddTransient<BatchScannerViewModel>();
-            services.AddTransient<GameProfilesViewModel>();
-            services.AddTransient<SettingsViewModel>();
-            services.AddTransient<AIModelsViewModel>();
-            services.AddTransient<AgentsViewModel>();
-            services.AddTransient<ProjectViewModel>();
-            _services = services.BuildServiceProvider();
+            _services = BuildServices(paths, fileLogging: true);
             _log = _services.GetRequiredService<ILoggerFactory>().CreateLogger("MadModStudio");
             _log.LogInformation("Mad Mod Studio starting. Data folder: {Root}", paths.Root);
 
@@ -77,6 +48,41 @@ public partial class App : Application
             MessageBox.Show($"Mad Mod Studio could not start:\n\n{SecretRedactor.Redact(ex.Message)}", "Mad Mod Studio", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    /// <summary>The application's composition root (also used by the UI tests).</summary>
+    public static ServiceProvider BuildServices(AppPaths paths, bool fileLogging)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(b =>
+        {
+            b.AddDebug();
+            if (fileLogging) b.AddProvider(new FileLoggerProvider(paths.Logs));
+            b.SetMinimumLevel(LogLevel.Information);
+        });
+        services.AddPersistence(paths);
+        services.AddGame7DTD();
+        services.AddAI(paths);
+        services.AddSingleton<IAIConsentService, WpfConsentService>();
+        // GUIDED control: agent changes wait in this queue until the user approves them in the Agents tab.
+        services.AddSingleton<ApprovalQueue>();
+        services.AddSingleton<IChangeApprovalService>(sp => sp.GetRequiredService<ApprovalQueue>());
+        services.AddSingleton<IDialogService, DialogService>();
+        services.AddSingleton<AppState>();
+        services.AddSingleton<MainViewModel>();
+        services.AddSingleton<INavigator>(sp => sp.GetRequiredService<MainViewModel>());
+        services.AddTransient<ImportWorkflow>();
+        services.AddTransient<HomeViewModel>();
+        services.AddTransient<NewModViewModel>();
+        services.AddTransient<RepairViewModel>();
+        services.AddTransient<MyModsViewModel>();
+        services.AddTransient<BatchScannerViewModel>();
+        services.AddTransient<GameProfilesViewModel>();
+        services.AddTransient<SettingsViewModel>();
+        services.AddTransient<AIModelsViewModel>();
+        services.AddTransient<AgentsViewModel>();
+        services.AddTransient<ProjectViewModel>();
+        return services.BuildServiceProvider();
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
