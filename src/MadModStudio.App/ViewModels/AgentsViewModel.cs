@@ -38,7 +38,23 @@ public sealed partial class AgentTaskItem : ObservableObject
     [ObservableProperty] private string _modelDisplay = "";
     [ObservableProperty] private AgentTaskState _state;
     [ObservableProperty] private string _summary = "";
+    [ObservableProperty] private string _activity = "";
+    public DateTimeOffset? ActivityStartedUtc { get; set; }
+    public DateTimeOffset? WorkStartedUtc { get; set; }
     public AgentTaskRecord? Snapshot { get; set; }
+    public bool HasActivity => Activity.Length > 0;
+    partial void OnActivityChanged(string value) => OnPropertyChanged(nameof(HasActivity));
+
+    /// <summary>Recomputes the live line, e.g. "Waiting for a1 (turn 2) · 34s · working 2m 10s". Called by a 1 s timer.</summary>
+    public void Tick(string? currentActivity)
+    {
+        static string Span(TimeSpan t) => t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes}m {t.Seconds:00}s" : $"{t.Seconds}s";
+        var now = DateTimeOffset.UtcNow;
+        if (currentActivity is null || State is not (AgentTaskState.Working or AgentTaskState.Planning or AgentTaskState.NeedsReview)) { Activity = ""; return; }
+        Activity = currentActivity
+            + (ActivityStartedUtc is { } a ? $" · {Span(now - a)}" : "")
+            + (WorkStartedUtc is { } w ? $" · working {Span(now - w)}" : "");
+    }
     public string StateText => State switch
     {
         AgentTaskState.NeedsReview => "NEEDS REVIEW",
@@ -73,6 +89,7 @@ public sealed partial class AgentsViewModel : ObservableObject
     private ModProject? _project;
     private Func<Task>? _afterChanges;
     private IReadOnlyList<(string Path, string Kind)>? _launchLogs;
+    private readonly System.Windows.Threading.DispatcherTimer _ticker;
 
     [ObservableProperty] private string _request = "";
     [ObservableProperty] private WorkflowKind _kind = WorkflowKind.Repair;
@@ -106,6 +123,9 @@ public sealed partial class AgentsViewModel : ObservableObject
         _coordinator = coordinator; _catalog = catalog; _providers = providers; _knowledge = knowledge; _context = context; _approvals = approvals;
         _agents = agents; _policy = policy; _projects = projects; _profiles = profiles; _dialogs = dialogs;
         _approvals.Changed += (_, _) => Application.Current?.Dispatcher.BeginInvoke(RefreshApprovals);
+        // Live elapsed times on the board while agents run (values come from real provider events, the timer only re-renders).
+        _ticker = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _ticker.Tick += (_, _) => { foreach (var t in Tasks) t.Tick(t.Snapshot?.CurrentActivity); };
         RoutingOptions = new[] { new OptionalChoice<RoutingMode>(null, "Global default") }.Concat(Enum.GetValues<RoutingMode>().Select(m => new OptionalChoice<RoutingMode>(m, m.ToString().ToUpperInvariant()))).ToList();
         ControlOptions = new[] { new OptionalChoice<AgentControlLevel>(null, "Global default") }.Concat(Enum.GetValues<AgentControlLevel>().Select(m => new OptionalChoice<AgentControlLevel>(m, m.ToString().ToUpperInvariant()))).ToList();
     }
@@ -204,7 +224,10 @@ public sealed partial class AgentsViewModel : ObservableObject
         item.ModelDisplay = copy.Model is null ? "—" : _catalog.Find(copy.Model)?.ToString() ?? copy.Model;
         item.State = copy.State;
         item.Summary = copy.Error ?? copy.ResultSummary ?? (copy.RecentActions.LastOrDefault() ?? "");
+        item.ActivityStartedUtc = copy.ActivityStartedUtc;
+        item.WorkStartedUtc = copy.WorkStartedUtc;
         item.Snapshot = copy;
+        item.Tick(copy.CurrentActivity);
         if (SelectedTask == item) _ = UpdateDetailsAsync();
     }
 
@@ -237,6 +260,7 @@ public sealed partial class AgentsViewModel : ObservableObject
         sb.AppendLine($"Task: {t.Title}");
         if (!string.IsNullOrWhiteSpace(t.Instructions)) sb.AppendLine($"Instructions: {t.Instructions}");
         sb.AppendLine($"Provider: {t.Provider ?? "—"}   Model: {t.Model ?? "—"}");
+        if (t.CurrentActivity != null) sb.AppendLine($"Now: {t.CurrentActivity}");
         if (t.ModelsTried.Count > 1) sb.AppendLine($"Models tried: {string.Join(" → ", t.ModelsTried)}");
         if (deps.Count > 0) sb.AppendLine($"Depends on: {string.Join(", ", deps)}");
         if (t.FilesRead.Count > 0) sb.AppendLine($"Files read: {string.Join(", ", t.FilesRead)}");
@@ -251,6 +275,11 @@ public sealed partial class AgentsViewModel : ObservableObject
         if (t.Error != null) sb.AppendLine($"Problem: {t.Error}");
         if (t.RecentActions.Count > 0) sb.AppendLine("Recent actions:\n  " + string.Join("\n  ", t.RecentActions.TakeLast(15)));
         TaskDetails = sb.ToString();
+    }
+
+    partial void OnIsRunningChanged(bool value)
+    {
+        if (value) _ticker.Start(); else _ticker.Stop();
     }
 
     private async Task Guard(string what, Func<Task> action)

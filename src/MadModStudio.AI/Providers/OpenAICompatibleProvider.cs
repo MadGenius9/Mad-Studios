@@ -123,16 +123,21 @@ public class OpenAICompatibleProvider : IAIProvider
             using var req = NewRequest(HttpMethod.Post, "/chat/completions");
             req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
             string json;
+            progress?.Report(AIEvent.Now(AIEventKind.RequestStarted, $"Waiting for {request.Model} (turn {turn + 1})"));
             try { json = await SendAsync(req, ct).ConfigureAwait(false); }
             catch (ProviderException ex) { return new AIRunResult { Error = ex.Message, Usage = usage, ToolCallCount = toolCalls, ModelUsed = request.Model }; }
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
+            long turnIn = 0, turnOut = 0;
             if (root.TryGetProperty("usage", out var u))
             {
-                if (u.TryGetProperty("prompt_tokens", out var pt)) usage.InputTokens += pt.GetInt64();
-                if (u.TryGetProperty("completion_tokens", out var cpt)) usage.OutputTokens += cpt.GetInt64();
+                if (u.TryGetProperty("prompt_tokens", out var pt)) turnIn = pt.GetInt64();
+                if (u.TryGetProperty("completion_tokens", out var cpt)) turnOut = cpt.GetInt64();
             }
+            usage.InputTokens += turnIn;
+            usage.OutputTokens += turnOut;
+            progress?.Report(AIEvent.Now(AIEventKind.ResponseReceived, $"{request.Model} replied ({turnIn:N0} input / {turnOut:N0} output tokens)"));
             if (!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
                 return new AIRunResult { Error = $"{DisplayName} returned no choices.", Usage = usage, ToolCallCount = toolCalls, ModelUsed = request.Model };
             var choice = choices[0];

@@ -184,11 +184,16 @@ public class ProviderWireTests
         var provider = new OpenAICompatibleProvider("xai", "xAI Grok", () => "https://api.x.ai/v1", secrets, maxTokensField: "max_tokens", http: new HttpClient(handler));
         var tools = new EchoTools();
 
-        var r = await provider.RunAsync(new AIRunRequest { SystemPrompt = "sys", UserMessage = "hi", Model = "grok-x" }, tools);
+        var events = new List<AIEvent>();
+        var r = await provider.RunAsync(new AIRunRequest { SystemPrompt = "sys", UserMessage = "hi", Model = "grok-x" }, tools, new SyncProgress<AIEvent>(events.Add));
 
         Assert.True(r.Success, r.Error);
         Assert.Equal("EntityDrone is verified.", r.FinalText);
         Assert.Equal(250, r.Usage.InputTokens);
+        // Each model call is bracketed by real lifecycle events carrying that turn's token counts.
+        Assert.Equal(new[] { "Waiting for grok-x (turn 1)", "Waiting for grok-x (turn 2)" }, events.Where(e => e.Kind == AIEventKind.RequestStarted).Select(e => e.Message));
+        Assert.Equal(new[] { "grok-x replied (100 input / 20 output tokens)", "grok-x replied (150 input / 10 output tokens)" },
+            events.Where(e => e.Kind == AIEventKind.ResponseReceived).Select(e => e.Message));
         Assert.Equal(("verify_api", """{"type_name":"EntityDrone"}"""), tools.Calls.Single());
         var first = handler.Seen[0];
         Assert.Equal("https://api.x.ai/v1/chat/completions", first.Request.RequestUri!.ToString());
@@ -239,10 +244,13 @@ public class ProviderWireTests
         var provider = new GeminiProvider(secrets, new HttpClient(handler));
         var tools = new EchoTools();
 
-        var r = await provider.RunAsync(new AIRunRequest { SystemPrompt = "sys", UserMessage = "hi", Model = "gemini-x-pro" }, tools);
+        var events = new List<AIEvent>();
+        var r = await provider.RunAsync(new AIRunRequest { SystemPrompt = "sys", UserMessage = "hi", Model = "gemini-x-pro" }, tools, new SyncProgress<AIEvent>(events.Add));
 
         Assert.True(r.Success, r.Error);
         Assert.Equal("Done.", r.FinalText);
+        Assert.Equal(2, events.Count(e => e.Kind == AIEventKind.RequestStarted));
+        Assert.Contains(events, e => e.Kind == AIEventKind.ResponseReceived && e.Message == "gemini-x-pro replied (80 input / 5 output tokens)");
         Assert.Single(tools.Calls);
         var first = handler.Seen[0];
         Assert.EndsWith("/models/gemini-x-pro:generateContent", first.Request.RequestUri!.AbsolutePath);

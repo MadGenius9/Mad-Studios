@@ -17,7 +17,8 @@ public interface IAIToolExecutor
     Task<AIToolResult> ExecuteAsync(string toolName, JsonElement input, CancellationToken ct);
 }
 
-public enum AIEventKind { Info, Thinking, Text, ToolCall, ToolResult, Warning, Error }
+/// <summary>RequestStarted/ResponseReceived bracket each model call so the UI can show real waiting time and token counts.</summary>
+public enum AIEventKind { Info, Thinking, Text, ToolCall, ToolResult, Warning, Error, RequestStarted, ResponseReceived }
 
 public sealed record AIEvent(AIEventKind Kind, string Message, DateTimeOffset TimestampUtc)
 {

@@ -275,6 +275,8 @@ public sealed class AgentCoordinator : IAgentCoordinator
         lock (t)
         {
             t.State = state;
+            t.CurrentActivity = null;
+            t.ActivityStartedUtc = null;
             if (state is AgentTaskState.Failed or AgentTaskState.Blocked) t.Error = summaryOrError;
             else t.ResultSummary = summaryOrError;
         }
@@ -349,11 +351,28 @@ public sealed class AgentCoordinator : IAgentCoordinator
             DiagnosisReport = rc.DiagnosisReport, PlannableAgents = _agents.Specialists.Select(s => s.Kind).ToHashSet(),
         };
         var perf = await _performance.StartAsync(model.ProviderId, model.ModelId, task.Agent, task.TaskType, rc.Project.Id, task.Id, rc.Ct).ConfigureAwait(false);
-        var progress = new SyncProgress<AIEvent>(e => { if (e.Kind is AIEventKind.ToolCall or AIEventKind.Warning) rc.Observer.OnTaskChanged(task); });
+        lock (task) task.WorkStartedUtc ??= DateTimeOffset.UtcNow;
+        var progress = new SyncProgress<AIEvent>(e =>
+        {
+            if (e.Kind is not (AIEventKind.ToolCall or AIEventKind.Warning or AIEventKind.RequestStarted or AIEventKind.ResponseReceived)) return;
+            lock (task)
+            {
+                task.CurrentActivity = e.Kind switch
+                {
+                    AIEventKind.RequestStarted => e.Message,
+                    AIEventKind.ResponseReceived => "Running tools — " + e.Message,
+                    AIEventKind.ToolCall => "Tool: " + e.Message.Split('(')[0],
+                    _ => task.CurrentActivity,
+                };
+                task.ActivityStartedUtc = e.TimestampUtc;
+            }
+            rc.Observer.OnTaskChanged(task);
+        });
         AgentExecutionResult exec;
         try
         {
             exec = await _runner.ExecuteAsync(ctx, model, task.Instructions, progress, 0, extraContext, rc.Ct).ConfigureAwait(false);
+            lock (task) { task.CurrentActivity = null; task.ActivityStartedUtc = null; }
         }
         catch (OperationCanceledException)
         {
@@ -432,7 +451,12 @@ public sealed class AgentCoordinator : IAgentCoordinator
         var diff = BuildDiff(rc.Project, proposal);
         if (rc.Control != AgentControlLevel.Automatic)
         {
-            lock (task) task.State = AgentTaskState.NeedsReview;
+            lock (task)
+            {
+                task.State = AgentTaskState.NeedsReview;
+                task.CurrentActivity = "Waiting for your approval (Approvals tab)";
+                task.ActivityStartedUtc = DateTimeOffset.UtcNow;
+            }
             await SaveTaskAsync(rc, task).ConfigureAwait(false);
             Emit(rc, $"{_agents.Get(task.Agent).DisplayName} proposes changes to {proposal.Edits.Count} file(s) — waiting for your approval.");
             var approved = await _approval.RequestAsync(new PendingChange
@@ -440,6 +464,7 @@ public sealed class AgentCoordinator : IAgentCoordinator
                 ProjectId = rc.Project.Id, TaskId = task.Id, Agent = _agents.Get(task.Agent).DisplayName, Provider = model.ProviderName, Model = model.Key,
                 Summary = proposal.Summary, Edits = proposal.Edits, Diff = diff,
             }, rc.Ct).ConfigureAwait(false);
+            lock (task) { task.CurrentActivity = null; task.ActivityStartedUtc = null; }
             if (!approved)
             {
                 await _knowledge.AddAsync(new KnowledgeArtifact

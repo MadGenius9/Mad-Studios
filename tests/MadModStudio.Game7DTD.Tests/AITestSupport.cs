@@ -59,7 +59,10 @@ public sealed class ScriptedProvider : IAIProvider
             var key = request.Tag ?? "";
             var n = _calls.AddOrUpdate(key, 1, (_, v) => v + 1);
             if (!Steps.TryGetValue(key, out var step)) return new AIRunResult { Error = $"No script for {key}", ModelUsed = request.Model };
+            // Same lifecycle events the real providers emit around each model call.
+            progress?.Report(AIEvent.Now(AIEventKind.RequestStarted, $"Waiting for {request.Model} (turn 1)"));
             var r = await step(request, tools, n);
+            progress?.Report(AIEvent.Now(AIEventKind.ResponseReceived, $"{request.Model} replied ({r.Usage.InputTokens:N0} input / {r.Usage.OutputTokens:N0} output tokens)"));
             return r;
         }
         finally { Interlocked.Decrement(ref _active); }

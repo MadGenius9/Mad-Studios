@@ -151,6 +151,35 @@ public class MultiAgentWorkflowTests
         Assert.True(result.Success, result.Report);
     }
 
+    private sealed class ActivityObserver : IAgentRunObserver
+    {
+        public List<(AgentKind Agent, string Activity)> Seen { get; } = new();
+        public void OnEvent(string message) { }
+        public void OnTaskChanged(AgentTaskRecord task)
+        {
+            string? a;
+            lock (task) a = task.CurrentActivity;
+            if (a != null) lock (Seen) Seen.Add((task.Agent, a));
+        }
+    }
+
+    [Fact]
+    public async Task Board_shows_what_each_agent_is_waiting_for_and_clears_it_when_done()
+    {
+        var alpha = Alpha(repairAlwaysFails: false);
+        using var host = new AITestHost(providers: alpha);
+        var (project, _) = await host.ImportBrokenAsync();
+        var observer = new ActivityObserver();
+
+        var result = await host.Get<IAgentCoordinator>().RunWorkflowAsync(new WorkflowRequest { Project = project, UserRequest = "Fix this mod." }, observer);
+
+        Assert.True(result.Success, result.Report);
+        Assert.Contains(observer.Seen, s => s.Agent == AgentKind.Lead && s.Activity == "Waiting for a1 (turn 1)");
+        Assert.Contains(observer.Seen, s => s.Activity.StartsWith("Running tools — a1 replied"));
+        Assert.All(result.Tasks, t => Assert.Null(t.CurrentActivity));
+        Assert.All(result.Tasks.Where(t => t.Model != null), t => Assert.NotNull(t.WorkStartedUtc));
+    }
+
     [Fact]
     public async Task Project_budget_counts_spend_recorded_before_a_restart()
     {

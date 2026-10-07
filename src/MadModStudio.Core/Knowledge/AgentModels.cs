@@ -122,6 +122,10 @@ public sealed class AgentTaskRecord
     public List<string> ModelsTried { get; set; } = new();
     public List<string> RecentActions { get; set; } = new();
     public string? Error { get; set; }
+    /// <summary>What the agent is doing right now (e.g. "Waiting for model (turn 2)"), from real provider events.</summary>
+    public string? CurrentActivity { get; set; }
+    public DateTimeOffset? ActivityStartedUtc { get; set; }
+    public DateTimeOffset? WorkStartedUtc { get; set; }
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }

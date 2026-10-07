@@ -232,6 +232,10 @@ Deploy to Game.
   package. Repeated failures produce an escalation suggestion (TRY x / KEEP CURRENT / CHOOSE MODEL) or, if enabled,
   an automatic switch. "Ask another model" evaluates an alternative proposal in a sandbox build; the compiler and
   validators decide, not AI votes.
+* Live progress — providers bracket every model call with `RequestStarted` / `ResponseReceived` events (with that
+  turn's real token counts); the coordinator turns them and tool calls into each task's `CurrentActivity`, which the
+  Agent Board shows with elapsed time ("Waiting for model (turn 2) · 34s · working 2m 10s") and the CLI prints. A task
+  waiting in the Approvals queue says so. No progress is simulated: between events only the clock advances.
 * `IAIConsentService` — before a run, the user sees which provider(s) receive which data categories.
 
 ## Desktop app

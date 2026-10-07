@@ -140,16 +140,21 @@ public sealed class GeminiProvider : IAIProvider
             using var req = NewRequest(HttpMethod.Post, $"/models/{Uri.EscapeDataString(request.Model)}:generateContent");
             req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
             string json;
+            progress?.Report(AIEvent.Now(AIEventKind.RequestStarted, $"Waiting for {request.Model} (turn {turn + 1})"));
             try { json = await SendAsync(req, ct).ConfigureAwait(false); }
             catch (ProviderException ex) { return new AIRunResult { Error = ex.Message, Usage = usage, ToolCallCount = toolCalls, ModelUsed = request.Model }; }
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
+            long turnIn = 0, turnOut = 0;
             if (root.TryGetProperty("usageMetadata", out var um))
             {
-                if (um.TryGetProperty("promptTokenCount", out var p)) usage.InputTokens += p.GetInt64();
-                if (um.TryGetProperty("candidatesTokenCount", out var cand)) usage.OutputTokens += cand.GetInt64();
+                if (um.TryGetProperty("promptTokenCount", out var p)) turnIn = p.GetInt64();
+                if (um.TryGetProperty("candidatesTokenCount", out var cand)) turnOut = cand.GetInt64();
             }
+            usage.InputTokens += turnIn;
+            usage.OutputTokens += turnOut;
+            progress?.Report(AIEvent.Now(AIEventKind.ResponseReceived, $"{request.Model} replied ({turnIn:N0} input / {turnOut:N0} output tokens)"));
             if (root.TryGetProperty("promptFeedback", out var pf) && pf.TryGetProperty("blockReason", out var br))
                 return new AIRunResult { Refused = true, StopReason = br.GetString(), Error = $"Gemini blocked this request ({br.GetString()}).", Usage = usage, ToolCallCount = toolCalls, ModelUsed = request.Model };
             if (!root.TryGetProperty("candidates", out var cands) || cands.GetArrayLength() == 0)

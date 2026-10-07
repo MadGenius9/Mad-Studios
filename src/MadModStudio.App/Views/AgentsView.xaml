@@ -97,6 +97,8 @@
                                             <Run Text="{Binding Title, Mode=OneWay}" />
                                         </TextBlock>
                                         <TextBlock Text="{Binding ModelDisplay}" Style="{StaticResource Dim}" FontSize="11" />
+                                        <TextBlock Text="{Binding Activity}" Foreground="{StaticResource InfoBrush}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                   Visibility="{Binding HasActivity, Converter={StaticResource BoolToVis}}" />
                                         <TextBlock Text="{Binding Summary}" Style="{StaticResource Dim}" FontSize="11" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Grid>

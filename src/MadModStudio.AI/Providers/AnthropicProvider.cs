@@ -102,6 +102,7 @@ public sealed class AnthropicProvider : IAIProvider
                         Fallbacks = new BetaFallbacksParam(new List<BetaFallbackParam> { new(fallback) }),
                     };
                 }
+                progress?.Report(AIEvent.Now(AIEventKind.RequestStarted, $"Waiting for {model} (turn {turn + 1})"));
                 response = await client.Beta.Messages.Create(parameters, ct).ConfigureAwait(false);
             }
             catch (AnthropicUnauthorizedException)
@@ -136,6 +137,7 @@ public sealed class AnthropicProvider : IAIProvider
             usage.InputTokens += response.Usage.InputTokens;
             usage.OutputTokens += response.Usage.OutputTokens;
             usage.CacheReadTokens += response.Usage.CacheReadInputTokens ?? 0;
+            progress?.Report(AIEvent.Now(AIEventKind.ResponseReceived, $"{model} replied ({response.Usage.InputTokens:N0} input / {response.Usage.OutputTokens:N0} output tokens)"));
             stop = response.StopReason?.ToString();
 
             var stopRaw = StopReasonString(response);

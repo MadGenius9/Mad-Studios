@@ -596,16 +596,25 @@ public static class CliApp
 
     private sealed class ConsoleObserver : IAgentRunObserver
     {
-        private readonly Dictionary<string, AgentTaskState> _last = new();
+        private readonly Dictionary<string, (AgentTaskState State, string? Activity)> _last = new();
         public void OnEvent(string message) => Console.WriteLine(message);
         public void OnTaskChanged(AgentTaskRecord t)
         {
+            AgentTaskState state;
+            string? activity;
+            lock (t) { state = t.State; activity = t.CurrentActivity; }
+            bool stateChanged;
             lock (_last)
             {
-                if (_last.TryGetValue(t.Id, out var s) && s == t.State) return;
-                _last[t.Id] = t.State;
+                var had = _last.TryGetValue(t.Id, out var last);
+                if (had && last.State == state && last.Activity == activity) return;
+                stateChanged = !had || last.State != state;
+                _last[t.Id] = (state, activity);
             }
-            Console.WriteLine($"  [{t.State,-11}] {t.Agent,-16} {t.Title}{(t.Model != null ? "  (" + t.Model + ")" : "")}{(t.Error != null ? " — " + t.Error : "")}");
+            if (stateChanged)
+                Console.WriteLine($"  [{state,-11}] {t.Agent,-16} {t.Title}{(t.Model != null ? "  (" + t.Model + ")" : "")}{(t.Error != null ? " — " + t.Error : "")}");
+            else if (activity != null)
+                Console.WriteLine($"  {"",13} {t.Agent,-16} {activity}");
         }
     }
 
