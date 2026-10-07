@@ -39,7 +39,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design.
 ```powershell
 dotnet build MadModStudio.sln -c Release
 dotnet run --project src/MadModStudio.App -c Release      # desktop app
-dotnet test MadModStudio.sln                               # 140+ tests
+dotnet test MadModStudio.sln                               # 170+ tests (UI tests run on Windows)
 ```
 
 The CLI (`mms`) uses the same engine and data folder:
@@ -95,6 +95,7 @@ coordinator (task graph, approvals, escalation, second opinions, project knowled
 WPF app and CLI.
 
 Deploy to Game (with backup/undo) and batch safe fixes are implemented. CI (`.github/workflows/ci.yml`) builds and
-tests on Windows and Linux on every push and publishes the desktop app as a build artifact.
+tests on Windows and Linux on every push and publishes the desktop app as a build artifact. On Windows it also runs
+UI smoke tests that render every screen with real data and fail on XAML or data-binding errors.
 
 Coming soon (disabled in the UI): GitHub sync.

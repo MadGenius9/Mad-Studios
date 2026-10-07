@@ -37,6 +37,8 @@ src/
                              file ownership, approvals, escalation, second opinions), secret storage (DPAPI)
   MadModStudio.App           WPF desktop app (MVVM, CommunityToolkit.Mvvm, AvalonEdit, DI)
   MadModStudio.Cli           `mms` headless front-end over the same services (scripting, CI, verification)
+  MadModStudio.App.Tests     Windows-only UI smoke tests: real composition root (App.BuildServices), every screen
+                             rendered with data, all tabs selected, XAML and binding errors fail the test
 .github/workflows/ci.yml     build + test on Windows and Linux, publish the desktop app artifact
 tests/
   MadModStudio.Core.Tests / Game7DTD.Tests / Compiler.Tests / Packaging.Tests
