@@ -101,6 +101,8 @@ public sealed partial class AgentsViewModel : ObservableObject
     [ObservableProperty] private AgentTaskItem? _selectedTask;
     [ObservableProperty] private string _taskDetails = "";
     [ObservableProperty] private PendingChange? _selectedPending;
+    [ObservableProperty] private string? _selectedPendingFile;
+    [ObservableProperty] private bool _sideBySide = true;
     [ObservableProperty] private EscalationSuggestion? _escalation;
     [ObservableProperty] private ModelChoice? _escalationChoice;
     [ObservableProperty] private OptionalChoice<RoutingMode>? _routingChoice;
@@ -133,6 +135,8 @@ public sealed partial class AgentsViewModel : ObservableObject
     public ObservableCollection<AgentTaskItem> Tasks { get; } = new();
     public ObservableCollection<string> Events { get; } = new();
     public ObservableCollection<PendingChange> PendingApprovals { get; } = new();
+    public ObservableCollection<string> PendingFiles { get; } = new();
+    public ObservableCollection<MadModStudio.ModAnalysis.Comparison.SideBySideRow> DiffRows { get; } = new();
     public ObservableCollection<AgentModelSetting> Team { get; } = new();
     public ObservableCollection<KnowledgeArtifact> Proposals { get; } = new();
     public ObservableCollection<ModelChoice> ModelChoices { get; } = new();
@@ -248,6 +252,30 @@ public sealed partial class AgentsViewModel : ObservableObject
     }
 
     partial void OnSelectedTaskChanged(AgentTaskItem? value) => _ = UpdateDetailsAsync();
+
+    partial void OnSelectedPendingChanged(PendingChange? value)
+    {
+        PendingFiles.Clear();
+        foreach (var e in value?.Edits ?? Array.Empty<FileEdit>()) PendingFiles.Add(e.RelativePath);
+        SelectedPendingFile = PendingFiles.FirstOrDefault();
+        if (SelectedPendingFile is null) DiffRows.Clear();
+    }
+
+    /// <summary>Side-by-side rows for one file of the pending change: the file as it is now vs. the proposed content.</summary>
+    partial void OnSelectedPendingFileChanged(string? value)
+    {
+        DiffRows.Clear();
+        var edit = SelectedPending?.Edits.FirstOrDefault(e => e.RelativePath == value);
+        if (_project is null || edit is null) return;
+        string current;
+        try
+        {
+            var full = Path.Combine(_project.SourcePath, edit.RelativePath);
+            current = File.Exists(full) ? File.ReadAllText(full) : "";
+        }
+        catch (IOException ex) { current = $"(could not read the current file: {ex.Message})"; }
+        foreach (var row in MadModStudio.ModAnalysis.Comparison.TextDiff.SideBySide(current, edit.NewContent ?? "")) DiffRows.Add(row);
+    }
 
     private async Task UpdateDetailsAsync()
     {

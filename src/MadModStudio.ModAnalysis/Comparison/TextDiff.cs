@@ -5,8 +5,51 @@ using DiffPlex.DiffBuilder.Model;
 
 namespace MadModStudio.ModAnalysis.Comparison;
 
+public enum DiffRowKind { Unchanged, Removed, Added, Modified, Gap }
+
+/// <summary>One aligned row of a side-by-side diff. Line numbers are 1-based; null where the side has no line.</summary>
+public sealed record SideBySideRow(int? OldLine, string OldText, int? NewLine, string NewText, DiffRowKind Kind);
+
 public static class TextDiff
 {
+    /// <summary>
+    /// Aligned side-by-side rows. Unchanged stretches longer than 2×<paramref name="context"/> lines are collapsed into
+    /// a single <see cref="DiffRowKind.Gap"/> row ("… N unchanged lines …").
+    /// </summary>
+    public static IReadOnlyList<SideBySideRow> SideBySide(string oldText, string newText, int context = 3)
+    {
+        static string Norm(string t) => t.Replace("\r\n", "\n") is var n && n.EndsWith('\n') ? n[..^1] : t.Replace("\r\n", "\n");
+        var model = SideBySideDiffBuilder.Diff(Norm(oldText), Norm(newText), ignoreWhiteSpace: false, ignoreCase: false);
+        var rows = new List<SideBySideRow>();
+        for (var i = 0; i < Math.Max(model.OldText.Lines.Count, model.NewText.Lines.Count); i++)
+        {
+            var o = i < model.OldText.Lines.Count ? model.OldText.Lines[i] : null;
+            var n = i < model.NewText.Lines.Count ? model.NewText.Lines[i] : null;
+            var oldReal = o is { Type: not ChangeType.Imaginary };
+            var newReal = n is { Type: not ChangeType.Imaginary };
+            var kind = !oldReal ? DiffRowKind.Added
+                : !newReal ? DiffRowKind.Removed
+                : o!.Type == ChangeType.Unchanged && n!.Type == ChangeType.Unchanged ? DiffRowKind.Unchanged
+                : DiffRowKind.Modified;
+            rows.Add(new SideBySideRow(oldReal ? o!.Position : null, oldReal ? o!.Text ?? "" : "", newReal ? n!.Position : null, newReal ? n!.Text ?? "" : "", kind));
+        }
+
+        // Collapse long unchanged runs, keeping `context` lines next to each change.
+        var keep = new bool[rows.Count];
+        for (var i = 0; i < rows.Count; i++)
+            if (rows[i].Kind != DiffRowKind.Unchanged)
+                for (var j = Math.Max(0, i - context); j <= Math.Min(rows.Count - 1, i + context); j++) keep[j] = true;
+        var result = new List<SideBySideRow>();
+        for (var i = 0; i < rows.Count;)
+        {
+            if (keep[i]) { result.Add(rows[i]); i++; continue; }
+            var start = i;
+            while (i < rows.Count && !keep[i]) i++;
+            result.Add(new SideBySideRow(null, $"… {i - start} unchanged line(s) …", null, "", DiffRowKind.Gap));
+        }
+        return result;
+    }
+
     /// <summary>Produces a unified diff (like `git diff`) with the given amount of context.</summary>
     public static (string Diff, int Added, int Removed) Unified(string oldText, string newText, string oldName, string newName, int context = 3)
     {

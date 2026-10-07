@@ -2,6 +2,20 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
+        <SolidColorBrush x:Key="DiffRemovedBg" Color="#40E06C75" />
+        <SolidColorBrush x:Key="DiffAddedBg" Color="#4098C379" />
+        <Style x:Key="DiffOldCell" TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Removed"><Setter Property="Background" Value="{StaticResource DiffRemovedBg}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Modified"><Setter Property="Background" Value="{StaticResource DiffRemovedBg}" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="DiffNewCell" TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Added"><Setter Property="Background" Value="{StaticResource DiffAddedBg}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Modified"><Setter Property="Background" Value="{StaticResource DiffAddedBg}" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="AgentState" TargetType="TextBlock">
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="FontSize" Value="11" />
@@ -156,7 +170,61 @@
                             <Button Content="Approve Change" Style="{StaticResource AccentButton}" Command="{Binding ApproveChangeCommand}" CommandParameter="{Binding SelectedPending}" />
                             <Button Content="Reject Change" Style="{StaticResource DangerButton}" Command="{Binding RejectChangeCommand}" CommandParameter="{Binding SelectedPending}" />
                         </StackPanel>
-                        <TextBox Text="{Binding SelectedPending.Diff, Mode=OneWay}" Style="{StaticResource ReadOnlyMono}" />
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                            <CheckBox DockPanel.Dock="Right" Content="Side by side" IsChecked="{Binding SideBySide}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <ComboBox ItemsSource="{Binding PendingFiles}" SelectedItem="{Binding SelectedPendingFile}" ToolTip="File in this change" />
+                        </DockPanel>
+                        <Grid>
+                            <TextBox Text="{Binding SelectedPending.Diff, Mode=OneWay}" Style="{StaticResource ReadOnlyMono}"
+                                     Visibility="{Binding SideBySide, Converter={StaticResource InvBoolToVis}}" />
+                            <DockPanel Visibility="{Binding SideBySide, Converter={StaticResource BoolToVis}}">
+                                <Grid DockPanel.Dock="Top" Margin="4,0,4,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="CURRENT" Foreground="{StaticResource TextDimBrush}" FontSize="11" FontWeight="SemiBold" />
+                                    <TextBlock Grid.Column="1" Text="PROPOSED" Foreground="{StaticResource TextDimBrush}" FontSize="11" FontWeight="SemiBold" />
+                                </Grid>
+                                <ListBox ItemsSource="{Binding DiffRows}" FontFamily="{StaticResource MonoFont}" FontSize="12" HorizontalContentAlignment="Stretch"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="Margin" Value="0" />
+                                            <Setter Property="Focusable" Value="False" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem"><ContentPresenter /></ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Style="{StaticResource DiffOldCell}" Margin="0,0,2,0">
+                                                    <DockPanel>
+                                                        <TextBlock DockPanel.Dock="Left" Text="{Binding OldLine}" Width="40" TextAlignment="Right" Margin="0,0,8,0" Foreground="{StaticResource TextDimBrush}" />
+                                                        <TextBlock Text="{Binding OldText}" TextWrapping="Wrap" />
+                                                    </DockPanel>
+                                                </Border>
+                                                <Border Grid.Column="1" Style="{StaticResource DiffNewCell}">
+                                                    <DockPanel>
+                                                        <TextBlock DockPanel.Dock="Left" Text="{Binding NewLine}" Width="40" TextAlignment="Right" Margin="0,0,8,0" Foreground="{StaticResource TextDimBrush}" />
+                                                        <TextBlock Text="{Binding NewText}" TextWrapping="Wrap" />
+                                                    </DockPanel>
+                                                </Border>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
+                        </Grid>
                     </DockPanel>
                 </Grid>
             </TabItem>
