@@ -130,6 +130,47 @@ public class MultiAgentWorkflowTests
     }
 
     [Fact]
+    public async Task Every_agent_call_is_recorded_in_the_spend_ledger_with_known_or_unknown_cost()
+    {
+        var alpha = Alpha(repairAlwaysFails: false);
+        using var host = new AITestHost(providers: alpha);
+        // alpha/a1 has no built-in price; set one the way the AI Models page does.
+        host.Get<MadModStudio.AI.Models.ModelProfileStore>().SetPrice("alpha", "a1", 2m, 10m);
+        host.Get<MadModStudio.AI.Models.IModelCatalog>().Rebuild();
+        var (project, _) = await host.ImportBrokenAsync();
+
+        var result = await host.Get<IAgentCoordinator>().RunWorkflowAsync(new WorkflowRequest { Project = project, UserRequest = "Fix this mod." });
+
+        var ledger = await host.Get<IAISpendRepository>().ListAsync(projectId: project.Id);
+        Assert.Equal(alpha.Requests.Count, ledger.Count);
+        Assert.All(ledger, r => Assert.Equal("a1", r.Model));
+        Assert.All(ledger, r => Assert.NotNull(r.CostUsd));
+        var expected = ledger.Sum(r => (r.InputTokens * 2m + r.OutputTokens * 10m) / 1_000_000m);
+        Assert.Equal(expected, await host.Get<IAISpendRepository>().ProjectTotalAsync(project.Id));
+        Assert.Contains(ledger, r => r.Agent == AgentKind.Lead);
+        Assert.True(result.Success, result.Report);
+    }
+
+    [Fact]
+    public async Task Project_budget_counts_spend_recorded_before_a_restart()
+    {
+        using var host = new AITestHost(providers: Alpha());
+        var (project, _) = await host.ImportBrokenAsync();
+        var ledger = host.Get<IAISpendRepository>();
+        await ledger.AddAsync(new AISpendRecord { ProjectId = project.Id, Provider = "alpha", Model = "a1", CostUsd = 0.60m });
+        await ledger.AddAsync(new AISpendRecord { ProjectId = project.Id, Provider = "alpha", Model = "a1", CostUsd = null }); // unpriced: never counted
+        await ledger.AddAsync(new AISpendRecord { ProjectId = Guid.NewGuid(), Provider = "alpha", Model = "a1", CostUsd = 5m }); // other project
+
+        // A fresh guard (as after restarting the app) still sees this project's recorded spend.
+        var guard = new BudgetGuard(ledger);
+        var policy = new AIPolicy { ProjectBudgetUsd = 0.50m };
+        Assert.Contains("Project AI budget", await guard.CheckAsync(policy, project.Id, 0));
+        policy.ProjectBudgetUsd = 1m;
+        Assert.Null(await guard.CheckAsync(policy, project.Id, 0));
+        Assert.Equal(0m, guard.SessionSpend);
+    }
+
+    [Fact]
     public async Task Without_auto_escalation_the_user_is_asked_and_can_try_the_suggested_model()
     {
         var alpha = Alpha();

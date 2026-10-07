@@ -27,6 +27,8 @@ public interface IModelCatalog
     ModelInfo? Find(string? key);
     /// <summary>Queries each configured provider's model API. Providers that fail keep their last known list.</summary>
     Task<IReadOnlyList<CatalogRefreshResult>> RefreshAsync(CancellationToken ct = default);
+    /// <summary>Re-applies model-profiles.json to the known models (no network).</summary>
+    void Rebuild();
     event EventHandler? Changed;
 }
 

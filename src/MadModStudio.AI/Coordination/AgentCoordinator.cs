@@ -523,7 +523,7 @@ public sealed class AgentCoordinator : IAgentCoordinator
                 var failedDep = t.DependsOn.Select(d => rc.Tasks.FirstOrDefault(x => x.Id == d)).FirstOrDefault(d => d is { State: AgentTaskState.Failed or AgentTaskState.Blocked or AgentTaskState.Skipped });
                 if (failedDep != null) await FinishTaskAsync(rc, t, AgentTaskState.Blocked, $"Dependency '{failedDep.Title}' did not complete.").ConfigureAwait(false);
             }
-            if (_budget.Check(_policy, rc.Project.Id, 0) is { } budgetError)
+            if (await _budget.CheckAsync(_policy, rc.Project.Id, 0, rc.Ct).ConfigureAwait(false) is { } budgetError)
             {
                 foreach (var t in waiting.Where(t => t.State == AgentTaskState.Waiting)) await FinishTaskAsync(rc, t, AgentTaskState.Skipped, budgetError).ConfigureAwait(false);
             }

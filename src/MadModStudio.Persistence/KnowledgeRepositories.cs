@@ -248,3 +248,60 @@ public sealed class SqliteModelPerformanceRepository : IModelPerformanceReposito
         }
     }
 }
+
+/// <summary>AI spend ledger. Costs are stored as invariant decimal text so no precision is lost.</summary>
+public sealed class SqliteAISpendRepository : IAISpendRepository
+{
+    private readonly AppDatabase _db;
+    public SqliteAISpendRepository(AppDatabase db) => _db = db;
+
+    public Task AddAsync(AISpendRecord record, CancellationToken ct = default)
+    {
+        using var c = _db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO ai_spend(project_id, provider, model, agent, input_tokens, output_tokens, cost_usd, utc)
+            VALUES($p, $prov, $m, $a, $i, $o, $c, $u); SELECT last_insert_rowid();
+            """;
+        cmd.Parameters.AddWithValue("$p", (object?)record.ProjectId?.ToString() ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$prov", record.Provider);
+        cmd.Parameters.AddWithValue("$m", record.Model);
+        cmd.Parameters.AddWithValue("$a", record.Agent.ToString());
+        cmd.Parameters.AddWithValue("$i", record.InputTokens);
+        cmd.Parameters.AddWithValue("$o", record.OutputTokens);
+        cmd.Parameters.AddWithValue("$c", (object?)record.CostUsd?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$u", Json.Iso(record.Utc));
+        record.Id = Convert.ToInt64(cmd.ExecuteScalar());
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<AISpendRecord>> ListAsync(DateTimeOffset? sinceUtc = null, Guid? projectId = null, CancellationToken ct = default)
+    {
+        using var c = _db.Open();
+        using var cmd = c.CreateCommand();
+        var where = new List<string>();
+        if (sinceUtc is { } since) { where.Add("utc >= $s"); cmd.Parameters.AddWithValue("$s", Json.Iso(since)); }
+        if (projectId is { } pid) { where.Add("project_id = $p"); cmd.Parameters.AddWithValue("$p", pid.ToString()); }
+        cmd.CommandText = "SELECT id, project_id, provider, model, agent, input_tokens, output_tokens, cost_usd, utc FROM ai_spend"
+            + (where.Count > 0 ? " WHERE " + string.Join(" AND ", where) : "") + " ORDER BY id DESC";
+        var list = new List<AISpendRecord>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+            list.Add(new AISpendRecord
+            {
+                Id = r.GetInt64(0),
+                ProjectId = r.IsDBNull(1) ? null : Guid.Parse(r.GetString(1)),
+                Provider = r.GetString(2),
+                Model = r.GetString(3),
+                Agent = Enum.TryParse<AgentKind>(r.GetString(4), out var a) ? a : AgentKind.Lead,
+                InputTokens = r.GetInt64(5),
+                OutputTokens = r.GetInt64(6),
+                CostUsd = r.IsDBNull(7) ? null : decimal.Parse(r.GetString(7), System.Globalization.CultureInfo.InvariantCulture),
+                Utc = Json.ParseIso(r.GetString(8)),
+            });
+        return Task.FromResult<IReadOnlyList<AISpendRecord>>(list);
+    }
+
+    public async Task<decimal> ProjectTotalAsync(Guid projectId, CancellationToken ct = default) =>
+        (await ListAsync(null, projectId, ct).ConfigureAwait(false)).Sum(r => r.CostUsd ?? 0m);
+}

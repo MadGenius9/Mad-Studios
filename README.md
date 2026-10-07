@@ -57,6 +57,7 @@ dotnet run --project src/MadModStudio.Cli -- ai providers                 # stat
 dotnet run --project src/MadModStudio.Cli -- ai models --refresh
 dotnet run --project src/MadModStudio.Cli -- ai fix <projectId> "fix the build" --yes   # multi-agent repair
 dotnet run --project src/MadModStudio.Cli -- ai performance               # real history only
+dotnet run --project src/MadModStudio.Cli -- ai spend                     # recorded AI spend; ai price <provider/model> <in> <out>
 ```
 
 ## First proof on your machine
@@ -71,7 +72,8 @@ dotnet run --project src/MadModStudio.Cli -- ai performance               # real
 
 6. Optional AI: **Settings → AI Providers** → paste a key → **Save Key** → **Test Connection** (models are discovered
    automatically). Open the project's **Agents** tab, describe the task and click **Run Agents**. In GUIDED mode each
-   change waits on the **Approvals** tab with its diff; **AI Models** shows performance from your own history.
+   change waits on the **Approvals** tab with its diff; **AI Models** shows performance from your own history, recorded
+   AI spend, and lets you enter prices for models that have none.
 
 No game files are copied or redistributed; mods are compiled against your installation's `Managed` folder.
 

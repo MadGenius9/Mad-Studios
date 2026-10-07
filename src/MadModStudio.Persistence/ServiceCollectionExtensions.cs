@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISettingsRepository, SqliteSettingsRepository>();
         services.AddSingleton<MadModStudio.Core.Knowledge.IKnowledgeRepository, SqliteKnowledgeRepository>();
         services.AddSingleton<MadModStudio.Core.Knowledge.IModelPerformanceRepository, SqliteModelPerformanceRepository>();
+        services.AddSingleton<MadModStudio.Core.Knowledge.IAISpendRepository, SqliteAISpendRepository>();
         return services;
     }
 }

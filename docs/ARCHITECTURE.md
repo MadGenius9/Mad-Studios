@@ -72,6 +72,7 @@ reference resolver against the same interfaces (`IGameKnowledgeIndex`, `IModVali
 | `workspace/projects/<id>/output/` | Packaged ZIPs, e.g. `MadWorkingRacks_1.0.9.zip`. |
 | `secrets/` | DPAPI-encrypted API keys (Windows, current user). |
 | `config/model-profiles.json` | Editable model capability/pricing rules used by the router (created from defaults). |
+| `madmodstudio.db` → `ai_spend` | Ledger of every AI request (tokens, estimated cost or unpriced). |
 | `config/models-cache.json` | Last successful model discovery per provider (no secrets). |
 | `logs/` | Application logs (secrets redacted). |
 | `deployments/<project>/<timestamp>/backup/` | Copies of game mod folders replaced by Deploy to Game (used by Undo). |
@@ -201,7 +202,11 @@ Deploy to Game.
   cost and **your own history**. Every decision carries human-readable reasons ("Why this model?").
 * `IModelPerformanceTracker` — aggregates real task records (success = change compiled + validated + not restored
   away). Fewer than 3 samples → "INSUFFICIENT DATA"; no benchmark numbers are ever shown or used.
-* `BudgetGuard` — tracks estimated spend from provider-reported tokens × profile prices; blocks runs over budget.
+* `BudgetGuard` — every AI request is written to the `ai_spend` ledger (provider-reported tokens, cost from profile
+  prices, or null = unpriced). Project budgets are checked against the ledger, so they survive restarts; session
+  budgets count the current run; unpriced calls are reported, never estimated. The AI Models page shows spend by
+  period, model and project and edits per-model prices (`ModelProfileStore.SetPrice` copies the matching rule into an
+  exact-match rule so tier/context are kept); `mms ai spend` / `mms ai price` do the same from the CLI.
 
 ### Knowledge and context
 

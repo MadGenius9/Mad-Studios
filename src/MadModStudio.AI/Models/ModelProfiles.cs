@@ -78,6 +78,34 @@ public sealed class ModelProfileStore
         _rules = file.Rules.Select(r => (r, new Regex(r.Pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))).ToList();
     }
 
+    /// <summary>
+    /// Sets (or clears, with nulls) the price of one model. Rules are first-match-wins, so the currently matching rule is
+    /// copied into an exact-match rule placed first; the model keeps its other properties (tier, context, ...).
+    /// </summary>
+    public void SetPrice(string providerId, string modelId, decimal? inputPerMTok, decimal? outputPerMTok)
+    {
+        if (inputPerMTok is < 0 || outputPerMTok is < 0) throw new ArgumentOutOfRangeException(nameof(inputPerMTok), "Prices cannot be negative.");
+        var file = File.Exists(_path) ? JsonSerializer.Deserialize<ModelProfileFile>(File.ReadAllText(_path), Options) ?? Defaults() : Defaults();
+        var exact = "^" + Regex.Escape(modelId) + "$";
+        var rule = file.Rules.FirstOrDefault(r => r.Provider.Equals(providerId, StringComparison.OrdinalIgnoreCase) && r.Pattern == exact);
+        if (rule is null)
+        {
+            var current = Match(providerId, modelId);
+            if (current?.Exclude == true) throw new InvalidOperationException($"{modelId} is excluded by the profiles file; remove that rule first.");
+            rule = current is null
+                ? new ModelProfileRule()
+                : JsonSerializer.Deserialize<ModelProfileRule>(JsonSerializer.Serialize(current, Options), Options)!;
+            rule.Provider = providerId;
+            rule.Pattern = exact;
+            rule.Note = "Price set in Mad Mod Studio.";
+            file.Rules.Insert(0, rule);
+        }
+        rule.InputCostPerMTok = inputPerMTok;
+        rule.OutputCostPerMTok = outputPerMTok;
+        File.WriteAllText(_path, JsonSerializer.Serialize(file, Options));
+        Reload();
+    }
+
     public ModelProfileRule? Match(string providerId, string modelId) =>
         _rules.FirstOrDefault(r => r.Rule.Provider.Equals(providerId, StringComparison.OrdinalIgnoreCase) && r.Regex.IsMatch(modelId)).Rule;
 

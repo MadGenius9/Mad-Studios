@@ -18,10 +18,10 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="3*" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="2*" />
+                <RowDefinition Height="3*" />
             </Grid.RowDefinitions>
             <TextBlock Text="Discovered models" Style="{StaticResource H2}" Margin="0,0,0,6" />
-            <DataGrid Grid.Row="1" ItemsSource="{Binding Models}" IsReadOnly="True" AutoGenerateColumns="False">
+            <DataGrid Grid.Row="1" ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel}" IsReadOnly="True" AutoGenerateColumns="False">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Provider" Binding="{Binding ProviderName, Mode=OneWay}" Width="140" />
                     <DataGridTextColumn Header="Model" Binding="{Binding DisplayName, Mode=OneWay}" Width="2*" />
@@ -35,23 +35,78 @@
                     <DataGridTextColumn Header="Source" Binding="{Binding MetadataSource, Mode=OneWay}" Width="1.5*" />
                 </DataGrid.Columns>
             </DataGrid>
-            <StackPanel Grid.Row="2" Margin="0,16,0,6">
-                <TextBlock Text="Model performance (your history)" Style="{StaticResource H2}" />
-                <TextBlock Style="{StaticResource Dim}" FontSize="11" TextWrapping="Wrap"
-                           Text="Computed only from tasks Mad Mod Studio actually ran. A task counts as a success only when its change compiled and validated and was not later restored away. No benchmark numbers are shown." />
-            </StackPanel>
-            <DataGrid Grid.Row="3" ItemsSource="{Binding Performance}" IsReadOnly="True" AutoGenerateColumns="False">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Model" Binding="{Binding Model, Mode=OneWay}" Width="2*" />
-                    <DataGridTextColumn Header="Task type" Binding="{Binding TaskType, Mode=OneWay}" Width="1.5*" />
-                    <DataGridTextColumn Header="Success rate" Binding="{Binding SuccessRate, Mode=OneWay}" Width="130" />
-                    <DataGridTextColumn Header="Succeeded" Binding="{Binding Counts, Mode=OneWay}" Width="90" />
-                    <DataGridTextColumn Header="Compile passes" Binding="{Binding Compile, Mode=OneWay}" Width="105" />
-                    <DataGridTextColumn Header="Validation passes" Binding="{Binding Validation, Mode=OneWay}" Width="120" />
-                    <DataGridTextColumn Header="Reverted" Binding="{Binding Reverted, Mode=OneWay}" Width="70" />
-                    <DataGridTextColumn Header="Avg time" Binding="{Binding AvgLatency, Mode=OneWay}" Width="70" />
-                </DataGrid.Columns>
-            </DataGrid>
+            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,8,0,8" Visibility="{Binding SelectedModel, Converter={StaticResource NullToVis}}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Margin="0,0,0,6"><Run Text="Price for" /> <Run Text="{Binding SelectedModel.DisplayName, Mode=OneWay}" /></TextBlock>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Input $ / million tokens" Style="{StaticResource Label}" />
+                        <TextBox Text="{Binding PriceInput, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,16,0" />
+                        <TextBlock Text="Output $ / million tokens" Style="{StaticResource Label}" />
+                        <TextBox Text="{Binding PriceOutput, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,16,0" />
+                        <Button Content="Save Price" Style="{StaticResource AccentButton}" Command="{Binding SavePriceCommand}" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                               Text="Use the provider's published prices. Saved to the model profiles file and used for cost estimates and budgets. Leave both blank to mark the cost as unknown." />
+                </StackPanel>
+            </Border>
+            <TabControl Grid.Row="3">
+                <TabItem Header="Performance (your history)">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Dim}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,6"
+                                   Text="Computed only from tasks Mad Mod Studio actually ran. A task counts as a success only when its change compiled and validated and was not later restored away. No benchmark numbers are shown." />
+                        <DataGrid ItemsSource="{Binding Performance}" IsReadOnly="True" AutoGenerateColumns="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Model" Binding="{Binding Model, Mode=OneWay}" Width="2*" />
+                                <DataGridTextColumn Header="Task type" Binding="{Binding TaskType, Mode=OneWay}" Width="1.5*" />
+                                <DataGridTextColumn Header="Success rate" Binding="{Binding SuccessRate, Mode=OneWay}" Width="130" />
+                                <DataGridTextColumn Header="Succeeded" Binding="{Binding Counts, Mode=OneWay}" Width="90" />
+                                <DataGridTextColumn Header="Compile passes" Binding="{Binding Compile, Mode=OneWay}" Width="105" />
+                                <DataGridTextColumn Header="Validation passes" Binding="{Binding Validation, Mode=OneWay}" Width="120" />
+                                <DataGridTextColumn Header="Reverted" Binding="{Binding Reverted, Mode=OneWay}" Width="70" />
+                                <DataGridTextColumn Header="Avg time" Binding="{Binding AvgLatency, Mode=OneWay}" Width="70" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </TabItem>
+                <TabItem Header="AI Spend">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Dim}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,6"
+                                       Text="Every AI request is recorded with the token counts the provider reported. Costs use the prices above; calls to models without a price are counted as unpriced and never guessed." />
+                            <DataGrid ItemsSource="{Binding SpendByPeriod}" IsReadOnly="True" AutoGenerateColumns="False" Margin="0,0,0,8">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Period" Binding="{Binding Label, Mode=OneWay}" Width="2*" />
+                                    <DataGridTextColumn Header="Calls" Binding="{Binding Calls, Mode=OneWay}" Width="60" />
+                                    <DataGridTextColumn Header="Input tokens" Binding="{Binding InputTokens, Mode=OneWay, StringFormat=N0}" Width="110" />
+                                    <DataGridTextColumn Header="Output tokens" Binding="{Binding OutputTokens, Mode=OneWay, StringFormat=N0}" Width="110" />
+                                    <DataGridTextColumn Header="Estimated cost" Binding="{Binding Cost, Mode=OneWay}" Width="130" />
+                                    <DataGridTextColumn Header="Unpriced calls" Binding="{Binding UnknownCostCalls, Mode=OneWay}" Width="100" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <DataGrid ItemsSource="{Binding SpendByModel}" IsReadOnly="True" AutoGenerateColumns="False" Margin="0,0,0,8">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Model" Binding="{Binding Label, Mode=OneWay}" Width="2*" />
+                                    <DataGridTextColumn Header="Calls" Binding="{Binding Calls, Mode=OneWay}" Width="60" />
+                                    <DataGridTextColumn Header="Input tokens" Binding="{Binding InputTokens, Mode=OneWay, StringFormat=N0}" Width="110" />
+                                    <DataGridTextColumn Header="Output tokens" Binding="{Binding OutputTokens, Mode=OneWay, StringFormat=N0}" Width="110" />
+                                    <DataGridTextColumn Header="Estimated cost" Binding="{Binding Cost, Mode=OneWay}" Width="130" />
+                                    <DataGridTextColumn Header="Unpriced calls" Binding="{Binding UnknownCostCalls, Mode=OneWay}" Width="100" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <DataGrid ItemsSource="{Binding SpendByProject}" IsReadOnly="True" AutoGenerateColumns="False" Margin="0,0,0,8">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Project" Binding="{Binding Label, Mode=OneWay}" Width="2*" />
+                                    <DataGridTextColumn Header="Calls" Binding="{Binding Calls, Mode=OneWay}" Width="60" />
+                                    <DataGridTextColumn Header="Input tokens" Binding="{Binding InputTokens, Mode=OneWay, StringFormat=N0}" Width="110" />
+                                    <DataGridTextColumn Header="Output tokens" Binding="{Binding OutputTokens, Mode=OneWay, StringFormat=N0}" Width="110" />
+                                    <DataGridTextColumn Header="Estimated cost" Binding="{Binding Cost, Mode=OneWay}" Width="130" />
+                                    <DataGridTextColumn Header="Unpriced calls" Binding="{Binding UnknownCostCalls, Mode=OneWay}" Width="100" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
         </Grid>
     </DockPanel>
 </UserControl>

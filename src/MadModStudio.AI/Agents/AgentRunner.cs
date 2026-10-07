@@ -40,7 +40,7 @@ public sealed class AgentRunner
         var toolbox = new AgentToolbox(ctx, def.Tools);
         AgentExecutionResult Fail(string error) => new() { Toolbox = toolbox, Model = model, Ai = new AIRunResult { Error = error, ModelUsed = model.ModelId } };
 
-        if (_budget.Check(_policy, ctx.Project.Id, taskSpend) is { } budgetError) return Fail(budgetError);
+        if (await _budget.CheckAsync(_policy, ctx.Project.Id, taskSpend, ct).ConfigureAwait(false) is { } budgetError) return Fail(budgetError);
         var provider = _providers.Get(model.ProviderId);
         if (provider is null || !provider.IsConfigured) return Fail($"{model.ProviderName} is not configured.");
         if (def.NeedsSource && !_policy.AllowSourceToExternal && def.CanWrite)
@@ -74,7 +74,7 @@ public sealed class AgentRunner
         }, toolbox, progress, ct).ConfigureAwait(false);
         sw.Stop();
         var cost = model.EstimateCost(ai.Usage.InputTokens, ai.Usage.OutputTokens);
-        _budget.Record(ctx.Project.Id, cost);
+        await _budget.RecordAsync(ctx.Project.Id, model, def.Kind, ai.Usage.InputTokens, ai.Usage.OutputTokens, cost, CancellationToken.None).ConfigureAwait(false);
         return new AgentExecutionResult { Toolbox = toolbox, Ai = ai, Model = model, LatencyMs = sw.ElapsedMilliseconds, EstimatedCost = cost };
     }
 }

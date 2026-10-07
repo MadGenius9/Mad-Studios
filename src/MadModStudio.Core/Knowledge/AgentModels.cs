@@ -173,6 +173,21 @@ public sealed class ModelPerformanceRecord
     public string? Notes { get; set; }
 }
 
+/// <summary>One AI request, recorded for every call so budgets and the cost view survive restarts.</summary>
+public sealed class AISpendRecord
+{
+    public long Id { get; set; }
+    public Guid? ProjectId { get; set; }
+    public string Provider { get; set; } = "";
+    public string Model { get; set; } = "";
+    public AgentKind Agent { get; set; }
+    public long InputTokens { get; set; }
+    public long OutputTokens { get; set; }
+    /// <summary>Null when the model has no configured price ("cost unknown"), never a guess.</summary>
+    public decimal? CostUsd { get; set; }
+    public DateTimeOffset Utc { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed record ModelTaskStats(string Provider, string Model, AITaskType TaskType, int Total, int Successes, int CompilePasses, int CompileAttempts, int ValidationPasses, int ValidationAttempts, int Reverted, double AvgLatencyMs)
 {
     public const int MinimumSamples = 3;

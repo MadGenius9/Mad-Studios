@@ -71,6 +71,8 @@ public static class CliApp
           mms ai agent <projectId> <AgentKind> "<instructions>" --yes [--model provider/model] [--approve-all]
           mms ai handoff <projectId>               structured handoff for switching models
           mms ai performance                       model success rates from your own history
+          mms ai spend                             recorded AI spend (unpriced calls are listed, never guessed)
+          mms ai price <provider/model> <in> <out> set a model's USD per million tokens ("clear" removes it)
 
         AI commands send data to AI providers; --yes confirms you accept that. Without --approve-all, proposed
         file changes are rejected (Guided control) unless Agent Control is AUTOMATIC.
@@ -553,8 +555,42 @@ public static class CliApp
                     Console.WriteLine($"{s.Provider}/{s.Model,-36} {s.TaskType,-22} {(s.HasEnoughData ? $"{s.SuccessRate:P0}" : "INSUFFICIENT DATA"),-18} ({s.Successes}/{s.Total}, reverted {s.Reverted})");
                 return 0;
             }
+            case "spend":
+            {
+                var all = await sp.GetRequiredService<MadModStudio.Core.Knowledge.IAISpendRepository>().ListAsync();
+                if (all.Count == 0) { Console.WriteLine("No AI calls have been recorded yet."); return 0; }
+                string Cost(IEnumerable<MadModStudio.Core.Knowledge.AISpendRecord> rs)
+                {
+                    var l = rs.ToList();
+                    var known = l.Where(r => r.CostUsd != null).ToList();
+                    var unknown = l.Count - known.Count;
+                    return known.Count == 0 ? "cost unknown" : $"${known.Sum(r => r.CostUsd!.Value):0.00}{(unknown > 0 ? $" + {unknown} unpriced call(s)" : "")}";
+                }
+                var now = DateTimeOffset.UtcNow;
+                Console.WriteLine($"Last 7 days:  {Cost(all.Where(r => r.Utc >= now.AddDays(-7)))}");
+                Console.WriteLine($"Last 30 days: {Cost(all.Where(r => r.Utc >= now.AddDays(-30)))}");
+                Console.WriteLine($"All time:     {Cost(all)}  ({all.Count} call(s), {all.Sum(r => r.InputTokens):N0} input / {all.Sum(r => r.OutputTokens):N0} output tokens)");
+                Console.WriteLine();
+                foreach (var g in all.GroupBy(r => $"{r.Provider}/{r.Model}").OrderByDescending(g => g.Sum(r => r.CostUsd ?? 0)))
+                    Console.WriteLine($"  {g.Key,-48} {g.Count(),5} call(s)  {Cost(g)}");
+                return 0;
+            }
+            case "price":
+            {
+                var key = ModelKey.Parse(args.ElementAtOrDefault(2)) ?? throw new ArgumentException("Use: ai price <provider/model> <input $/MTok> <output $/MTok> | clear");
+                decimal? input = null, output = null;
+                if (args.ElementAtOrDefault(3) != "clear")
+                {
+                    input = decimal.Parse(args.ElementAtOrDefault(3) ?? throw new ArgumentException("Missing input price."), System.Globalization.CultureInfo.InvariantCulture);
+                    output = decimal.Parse(args.ElementAtOrDefault(4) ?? throw new ArgumentException("Missing output price."), System.Globalization.CultureInfo.InvariantCulture);
+                }
+                sp.GetRequiredService<ModelProfileStore>().SetPrice(key.Provider, key.Model, input, output);
+                catalog.Rebuild();
+                Console.WriteLine(input is null ? $"Price cleared for {key.Provider}/{key.Model} (cost unknown)." : $"Price set for {key.Provider}/{key.Model}: ${input} in / ${output} out per million tokens.");
+                return 0;
+            }
             default:
-                return Fail("Use: ai providers|key|test|models|policy|fix|create|agent|handoff|performance");
+                return Fail("Use: ai providers|key|test|models|policy|fix|create|agent|handoff|performance|spend|price");
         }
     }
 

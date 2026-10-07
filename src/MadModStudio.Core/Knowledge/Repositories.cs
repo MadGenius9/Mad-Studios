@@ -25,6 +25,15 @@ public interface IModelPerformanceRepository
     Task MarkRevertedByRevisionAsync(Guid projectId, long restoredToRevisionId, CancellationToken ct = default);
 }
 
+public interface IAISpendRepository
+{
+    Task AddAsync(AISpendRecord record, CancellationToken ct = default);
+    /// <summary>Records since <paramref name="sinceUtc"/> (all when null), newest first.</summary>
+    Task<IReadOnlyList<AISpendRecord>> ListAsync(DateTimeOffset? sinceUtc = null, Guid? projectId = null, CancellationToken ct = default);
+    /// <summary>Sum of known costs for a project (unknown-cost calls are not counted).</summary>
+    Task<decimal> ProjectTotalAsync(Guid projectId, CancellationToken ct = default);
+}
+
 /// <summary>Notified when a game profile's assemblies change (e.g. after a 7DTD update).</summary>
 public interface IGameUpdateListener
 {

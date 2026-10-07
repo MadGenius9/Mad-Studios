@@ -26,6 +26,7 @@ public class ModelRouterTests
         public ModelInfo? Find(string providerId, string modelId) => Models.FirstOrDefault(m => m.ProviderId == providerId && m.ModelId == modelId);
         public ModelInfo? Find(string? key) => Models.FirstOrDefault(m => m.Key == key);
         public Task<IReadOnlyList<CatalogRefreshResult>> RefreshAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CatalogRefreshResult>>(Array.Empty<CatalogRefreshResult>());
+        public void Rebuild() { }
         public event EventHandler? Changed { add { } remove { } }
     }
 
