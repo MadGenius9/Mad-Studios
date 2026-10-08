@@ -115,6 +115,28 @@ public sealed class GameInstallLocator
         }.CopyMessages(v);
     }
 
+    /// <summary>
+    /// Finds the install root inside an extracted archive: <paramref name="dir"/> itself, or the shallowest descendant
+    /// (up to <paramref name="maxDepth"/> levels) that holds a *_Data/Managed/Assembly-CSharp.dll. ZIPs often wrap the game in a folder.
+    /// </summary>
+    public string? FindInstallRootBelow(string dir, int maxDepth = 3)
+    {
+        var level = new List<string> { dir };
+        for (var depth = 0; depth <= maxDepth && level.Count > 0; depth++)
+        {
+            var found = level.FirstOrDefault(d => FindDataFolder(d) != null);
+            if (found != null) return found;
+            var next = new List<string>();
+            foreach (var d in level)
+            {
+                try { next.AddRange(Directory.GetDirectories(d)); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+            level = next;
+        }
+        return null;
+    }
+
     private static string? FindDataFolder(string dir)
     {
         try

@@ -1,5 +1,6 @@
 using MadModStudio.Core;
 using MadModStudio.Core.Abstractions;
+using MadModStudio.Core.IO;
 using MadModStudio.Core.Models;
 using MadModStudio.Game7DTD.Index;
 using Microsoft.Extensions.Logging;
@@ -73,6 +74,125 @@ public sealed class GameProfileService
         await _profiles.SaveAsync(profile, ct).ConfigureAwait(false);
         _log.LogInformation("Created game profile {Name} at {Path}", profile.Name, profile.InstallPath);
         return new ProfileCreationResult { Profile = profile, Validation = validation, Version = version, Runtime = runtime };
+    }
+
+    // A full game install is far larger than the defaults meant for mod archives.
+    private static readonly ZipExtractionLimits GameZipLimits = new()
+    {
+        MaxTotalUncompressedBytes = 64L * 1024 * 1024 * 1024,
+        MaxEntryUncompressedBytes = 16L * 1024 * 1024 * 1024,
+        MaxEntries = 500_000,
+    };
+
+    /// <summary>
+    /// Extracts a ZIP of the game (or a dedicated server) into Mad Mod Studio's own data folder, then creates a profile from it.
+    /// The extracted copy is owned by the profile and removed with it. On any failure nothing is left behind.
+    /// </summary>
+    public async Task<ProfileCreationResult> CreateProfileFromZipAsync(string zipPath, string? name = null, CancellationToken ct = default)
+    {
+        var dest = Path.Combine(_paths.GameInstalls, Guid.NewGuid().ToString("N"));
+        try
+        {
+            var extracted = await Task.Run(() => SafeZip.Extract(zipPath, dest, GameZipLimits), ct).ConfigureAwait(false);
+            // Standard layout first; otherwise accept a "DLLs + config files" ZIP laid out any which way.
+            var root = _locator.FindInstallRootBelow(dest) ?? NormalizeLooseLayout(dest);
+            if (root is null)
+            {
+                var none = new InstallValidation();
+                none.Errors.Add($"No 7 Days to Die installation was found in '{Path.GetFileName(zipPath)}' ({extracted.FilesExtracted:N0} files extracted). " +
+                                "The ZIP must contain the game's DLLs (including Assembly-CSharp.dll) and its config XML files (blocks.xml, items.xml, ...).");
+                DeleteExtracted(dest);
+                return new ProfileCreationResult { Validation = none };
+            }
+            var result = await CreateProfileAsync(root, name, ct).ConfigureAwait(false);
+            if (result.Profile is null) DeleteExtracted(dest);
+            else _log.LogInformation("Extracted {Zip} ({Files} files) to {Dest}", zipPath, extracted.FilesExtracted, dest);
+            return result;
+        }
+        catch (ZipSafetyException ex)
+        {
+            DeleteExtracted(dest);
+            var v = new InstallValidation();
+            v.Errors.Add(ex.Message);
+            return new ProfileCreationResult { Validation = v };
+        }
+        catch
+        {
+            DeleteExtracted(dest);
+            throw;
+        }
+    }
+
+    private static readonly string[] DllExts = { ".dll", ".pdb", ".mdb" };
+    private static readonly string[] ConfigExts = { ".xml", ".txt" };
+
+    /// <summary>
+    /// For ZIPs holding only the game's DLLs and config files (no 7DaysToDie_Data/Data folders): finds the folder with
+    /// Assembly-CSharp.dll and the folder with blocks.xml and rebuilds the layout the rest of the app expects
+    /// (7DaysToDie_Data/Managed and Data/Config) in a subfolder of <paramref name="dest"/>. Returns that root, or null.
+    /// </summary>
+    private static string? NormalizeLooseLayout(string dest)
+    {
+        static int Depth(string p) => p.Count(c => c == Path.DirectorySeparatorChar);
+        var asm = Directory.EnumerateFiles(dest, "Assembly-CSharp.dll", SearchOption.AllDirectories).OrderBy(Depth).FirstOrDefault();
+        if (asm is null) return null;
+        var managedSrc = Path.GetDirectoryName(asm)!;
+        var configSrc = Directory.EnumerateFiles(dest, "blocks.xml", SearchOption.AllDirectories)
+            .Select(f => Path.GetDirectoryName(f)!)
+            .OrderBy(d => File.Exists(Path.Combine(d, "items.xml")) ? 0 : 1).ThenBy(Depth)
+            .FirstOrDefault();
+
+        var root = Path.Combine(dest, "_layout");
+        var managedDst = Path.Combine(root, "7DaysToDie_Data", "Managed");
+        var configDst = Path.Combine(root, "Data", "Config");
+        MoveContents(managedSrc, managedDst, DllExts, root, dest);
+        if (configSrc != null) MoveContents(configSrc, configDst, ConfigExts, root, dest);
+        return root;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="src"/>'s contents into <paramref name="dst"/>. When src is the extraction root itself only
+    /// files with the given extensions move (it may hold unrelated files); otherwise everything does, including subfolders.
+    /// </summary>
+    private static void MoveContents(string src, string dst, string[] looseExts, string skipRoot, string extractionRoot)
+    {
+        Directory.CreateDirectory(dst);
+        var isTop = string.Equals(Path.GetFullPath(src), Path.GetFullPath(extractionRoot), StringComparison.OrdinalIgnoreCase);
+        foreach (var entry in Directory.GetFileSystemEntries(src))
+        {
+            if (string.Equals(Path.GetFullPath(entry), Path.GetFullPath(skipRoot), StringComparison.OrdinalIgnoreCase)) continue;
+            var target = Path.Combine(dst, Path.GetFileName(entry));
+            if (Directory.Exists(entry))
+            {
+                if (!isTop) Directory.Move(entry, target);
+            }
+            else if (!isTop || looseExts.Contains(Path.GetExtension(entry), StringComparer.OrdinalIgnoreCase))
+            {
+                if (!File.Exists(target)) File.Move(entry, target);
+            }
+        }
+    }
+
+    /// <summary>True when the profile's install is a copy this app extracted from a ZIP (so it is ours to delete).</summary>
+    public bool IsManagedCopy(GameProfile profile) => ManagedCopyRoot(profile.InstallPath) != null;
+
+    private string? ManagedCopyRoot(string? installPath)
+    {
+        if (string.IsNullOrEmpty(installPath)) return null;
+        var baseDir = Path.GetFullPath(_paths.GameInstalls).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var full = Path.GetFullPath(installPath);
+        if (!full.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase)) return null;
+        var first = full[baseDir.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        return first is null ? null : Path.Combine(baseDir, first);
+    }
+
+    private void DeleteExtracted(string dir)
+    {
+        try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.LogWarning(ex, "Could not remove extracted game files at {Dir}", dir);
+        }
     }
 
     public async Task<IndexBuildResult> ReindexAsync(GameProfile profile, IProgress<IndexProgress>? progress = null, CancellationToken ct = default)
@@ -178,7 +298,10 @@ public sealed class GameProfileService
     {
         lock (_indexCache) _indexCache.Remove(profile.Id);
         await _profiles.DeleteAsync(profile.Id, ct).ConfigureAwait(false);
-        // Only our own cache file is removed; nothing in the game installation is touched.
+        // Only our own cache file is removed; a game installation the user pointed us at is never touched.
+        // The exception is a copy we extracted from a ZIP, which lives in our data folder and belongs to the profile.
+        var managedCopy = ManagedCopyRoot(profile.InstallPath);
+        if (managedCopy != null) DeleteExtracted(managedCopy);
         if (profile.IndexPath != null)
         {
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

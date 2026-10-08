@@ -20,10 +20,12 @@ public sealed class AppPaths
     public string Scratch => Path.Combine(Root, "scratch");
     /// <summary>Backups of game Mods folders replaced by "Deploy to Game", plus staging for deployments.</summary>
     public string Deployments => Path.Combine(Root, "deployments");
+    /// <summary>Game installations extracted from a ZIP ("Add from ZIP"); each profile owns one subfolder.</summary>
+    public string GameInstalls => Path.Combine(Root, "game-installs");
 
     public void EnsureCreated()
     {
-        foreach (var d in new[] { Root, Workspace, Projects, Cache, GameIndexes, Secrets, Logs, Scratch, Deployments })
+        foreach (var d in new[] { Root, Workspace, Projects, Cache, GameIndexes, Secrets, Logs, Scratch, Deployments, GameInstalls })
             Directory.CreateDirectory(d);
     }
 
