@@ -69,20 +69,32 @@ public sealed partial class GameProfilesViewModel : PageViewModel
     {
         var path = _dialogs.PickFolder("Select your 7 Days to Die installation folder");
         if (path is null) return;
+        await FinishAddAsync(await _profiles.CreateProfileAsync(path), "folder");
+    });
+
+    [RelayCommand]
+    private Task AddInstallationFromZip() => RunAsync("Extracting ZIP and validating (a full game can take several minutes)...", async () =>
+    {
+        var zip = _dialogs.PickFile("Select a ZIP of your 7 Days to Die installation or dedicated server", "Game archives (*.zip)|*.zip");
+        if (zip is null) return;
+        await FinishAddAsync(await _profiles.CreateProfileFromZipAsync(zip), "ZIP");
+    });
+
+    private async Task FinishAddAsync(ProfileCreationResult result, string source)
+    {
         ValidationMessages.Clear();
-        var result = await _profiles.CreateProfileAsync(path);
         foreach (var e in result.Validation.Errors) ValidationMessages.Add("ERROR: " + e);
         foreach (var w in result.Validation.Warnings) ValidationMessages.Add("WARNING: " + w);
         foreach (var n in result.Validation.Notes) ValidationMessages.Add("NOTE: " + n);
         if (result.Profile is null)
         {
-            ErrorMessage = "That folder is not a usable 7 Days to Die installation. See the messages below.";
+            ErrorMessage = $"That {source} is not a usable 7 Days to Die installation. See the messages below.";
             return;
         }
         if (State.CurrentProfile is null) await State.SetCurrentAsync(result.Profile);
         await ReloadAsync(result.Profile.Id);
         await IndexAsync(result.Profile);
-    });
+    }
 
     [RelayCommand]
     private Task Reindex() => Selected is null ? Task.CompletedTask : RunAsync("Indexing...", () => IndexAsync(Selected));
@@ -115,7 +127,10 @@ public sealed partial class GameProfilesViewModel : PageViewModel
     private Task Delete() => RunAsync("Removing profile...", async () =>
     {
         if (Selected is null) return;
-        if (!_dialogs.Confirm("Remove Game Profile", $"Remove '{Selected.Name}'? Only Mad Mod Studio's index cache is deleted; your game installation is not touched.")) return;
+        var message = _profiles.IsManagedCopy(Selected)
+            ? $"Remove '{Selected.Name}'? Its index cache and the copy of the game extracted from your ZIP are deleted. Your original ZIP is not touched."
+            : $"Remove '{Selected.Name}'? Only Mad Mod Studio's index cache is deleted; your game installation is not touched.";
+        if (!_dialogs.Confirm("Remove Game Profile", message)) return;
         var wasCurrent = State.CurrentProfile?.Id == Selected.Id;
         await _profiles.DeleteAsync(Selected);
         await ReloadAsync(null);
