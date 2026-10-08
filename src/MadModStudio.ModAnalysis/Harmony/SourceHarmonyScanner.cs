@@ -61,6 +61,7 @@ public sealed class SourceHarmonyScanner
                     File = fileName,
                     Line = pm.Method.GetLocation().GetLineSpan().StartLinePosition.Line + 1,
                     IsDynamicTarget = hasTargetMethod && t is null,
+                    PatchParameterNames = PatchParameterNames(pm.Method),
                 });
             }
             if (patchMethods.Count == 0)
@@ -81,6 +82,15 @@ public sealed class SourceHarmonyScanner
             }
         }
         return result;
+    }
+
+    /// <summary>Names of the method's parameters that Harmony resolves by name (those without [HarmonyArgument]).</summary>
+    private static List<string>? PatchParameterNames(MethodDeclarationSyntax m)
+    {
+        if (m.AttributeLists.SelectMany(a => a.Attributes).Any(a => HarmonyPatchMerger.IsHarmonyArgumentAttribute(Simple(a.Name)))) return null;
+        return m.ParameterList.Parameters
+            .Where(p => !p.AttributeLists.SelectMany(a => a.Attributes).Any(a => HarmonyPatchMerger.IsHarmonyArgumentAttribute(Simple(a.Name))))
+            .Select(p => p.Identifier.Text).ToList();
     }
 
     private static IEnumerable<AttributeSyntax> HarmonyAttributes(SyntaxList<AttributeListSyntax> lists) =>

@@ -18,6 +18,11 @@ public sealed record HarmonyPatchInfo
     public int? Line { get; init; }
     /// <summary>True when the target is computed at runtime (TargetMethod/TargetMethods) and cannot be resolved statically.</summary>
     public bool IsDynamicTarget { get; init; }
+    /// <summary>
+    /// Parameter names of the patch method that Harmony resolves by name (__instance, ___field, original parameter
+    /// names, ...). Parameters remapped with [HarmonyArgument] are left out; null when unknown or remapped at method level.
+    /// </summary>
+    public IReadOnlyList<string>? PatchParameterNames { get; init; }
 
     public string TargetDisplay
     {
@@ -112,6 +117,13 @@ public static class HarmonyPatchMerger
     {
         var simple = attributeName.Split('.', '+').Last();
         return simple is "HarmonyPatch" or "HarmonyPatchAttribute";
+    }
+
+    /// <summary>[HarmonyArgument] remaps a patch parameter to an original parameter, so its own name doesn't matter.</summary>
+    public static bool IsHarmonyArgumentAttribute(string attributeName)
+    {
+        var simple = attributeName.Split('.', '+').Last();
+        return simple is "HarmonyArgument" or "HarmonyArgumentAttribute";
     }
 
     public static bool IsPatchKindAttribute(string attributeName)
