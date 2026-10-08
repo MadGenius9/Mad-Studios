@@ -1,3 +1,4 @@
+using MadModStudio.Core.Models;
 using MadModStudio.Game7DTD.Install;
 using MadModStudio.Game7DTD.Logs;
 using MadModStudio.Game7DTD.Projects;
@@ -98,6 +99,69 @@ public class LogAndRepairTests
         Assert.DoesNotContain(d.RelevantGroups, g => g.Category == Logs.LogCategory.NullReference); // other mod's error is not attributed
         Assert.Equal(3, d.Comparison!.Modified.Count());
         Assert.Contains("PROPOSED REPAIRS", d.Report);
+    }
+
+    private static string WriteXmlMod(string items)
+    {
+        var mod = Path.Combine(FakeGame.TempDir("xmlmod"), "XpathMod");
+        Directory.CreateDirectory(Path.Combine(mod, "Config"));
+        File.WriteAllText(Path.Combine(mod, "ModInfo.xml"), """<xml><Name value="XpathMod"/><DisplayName value="XpathMod"/><Version value="1.0"/><Author value="a"/></xml>""");
+        File.WriteAllText(Path.Combine(mod, "Config", "items.xml"), items);
+        return mod;
+    }
+
+    [Fact]
+    public async Task Repair_report_shows_warnings_such_as_an_xpath_that_matches_nothing()
+    {
+        using var host = new TestHost();
+        var profiles = host.Get<GameProfileService>();
+        var profile = (await profiles.CreateProfileAsync(FakeGame.Shared)).Profile!;
+        await profiles.ReindexAsync(profile);
+        var mod = WriteXmlMod("""<configs><set xpath="/items/item[@name='thisItemWasRemoved']/property[@name='Stacknumber']/@value">999</set></configs>""");
+        var project = (await host.Get<ProjectService>().ImportAsync(mod, profile.Id)).Single().Project;
+
+        var d = await host.Get<RepairService>().DiagnoseAsync(project, new RepairInputs());
+
+        Assert.Contains(d.GameCompatibilityFindings, f => f.Severity == Severity.Warning && f.Message.Contains("matches nothing"));
+        Assert.Contains("GAME COMPATIBILITY", d.Report);
+        Assert.Contains("1 warning(s)", d.Report);
+        Assert.Contains("thisItemWasRemoved", d.Report);
+        Assert.Contains(d.LikelyCauses, c => c.Contains("warning(s) against the installed game"));
+    }
+
+    [Fact]
+    public async Task Repair_report_lists_the_mods_own_analysis_findings_not_just_counts()
+    {
+        using var host = new TestHost();
+        var profiles = host.Get<GameProfileService>();
+        var profile = (await profiles.CreateProfileAsync(FakeGame.Shared)).Profile!;
+        await profiles.ReindexAsync(profile);
+        var mod = WriteXmlMod("<configs><set xpath=\"/items\">1</set>"); // unclosed root: malformed XML
+        var project = (await host.Get<ProjectService>().ImportAsync(mod, profile.Id)).Single().Project;
+
+        var d = await host.Get<RepairService>().DiagnoseAsync(project, new RepairInputs());
+
+        Assert.Contains("MOD ANALYSIS FINDINGS", d.Report);
+        Assert.Contains("Malformed XML", d.Report);
+        Assert.Contains(d.LikelyCauses, c => c.StartsWith("Problem in the mod itself: Malformed XML"));
+    }
+
+    [Fact]
+    public async Task Repair_report_says_what_was_checked_when_nothing_is_found()
+    {
+        using var host = new TestHost();
+        var profiles = host.Get<GameProfileService>();
+        var profile = (await profiles.CreateProfileAsync(FakeGame.Shared)).Profile!;
+        await profiles.ReindexAsync(profile);
+        var mod = WriteXmlMod("""<configs><set xpath="/items/item[@name='resourceWood']/property[@name='Stacknumber']/@value">999</set></configs>""");
+        var project = (await host.Get<ProjectService>().ImportAsync(mod, profile.Id)).Single().Project;
+
+        var d = await host.Get<RepairService>().DiagnoseAsync(project, new RepairInputs());
+
+        Assert.Contains("checked against " + profile.Name, d.Report);
+        Assert.Contains("0 error(s), 0 warning(s)", d.Report);
+        Assert.Contains("XML patch XPaths match something", d.Report);
+        Assert.Contains("cannot detect problems that only occur while the game runs", d.Report);
     }
 
     [Fact]

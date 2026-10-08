@@ -31,6 +31,10 @@ public sealed class Diagnosis
     public List<Correlation> Correlations { get; } = new();
     public VersionComparison? Comparison { get; set; }
     public List<ValidationFinding> GameCompatibilityFindings { get; } = new();
+    /// <summary>Game profile the mod was checked against (name + version), or null if no indexed profile was available.</summary>
+    public string? CheckedAgainst { get; set; }
+    /// <summary>What the compatibility check actually covers, so a clean result is not mistaken for "nothing can be wrong".</summary>
+    public List<string> ChecksRun { get; } = new();
     public List<string> LikelyCauses { get; } = new();
     public List<string> ProposedRepairs { get; } = new();
     public string Report { get; set; } = "";
@@ -94,6 +98,14 @@ public sealed class RepairService
             var checks = new IModValidator[] { new HarmonyTargetValidator(_inspector), new GameApiReferenceValidator(_inspector), new XmlPatchTargetValidator(), new XmlWellFormedValidator() };
             var vr = await new ValidationRunner(checks).RunAsync(ctx, ct).ConfigureAwait(false);
             d.GameCompatibilityFindings.AddRange(vr.Findings.Where(f => f.Severity >= Severity.Warning));
+            d.CheckedAgainst = profile?.Name;
+            d.ChecksRun.AddRange(new[]
+            {
+                "Harmony patch targets exist in the game's DLLs",
+                "game types/methods/fields used by mod DLLs still exist",
+                "XML patch XPaths match something in the game's config XML",
+                "mod XML files are well-formed",
+            });
         }
         else d.LikelyCauses.Add("No indexed Game Profile: the mod could not be compared against the installed game's API and XML. Assign and index a Game Profile for a full diagnosis.");
 
@@ -220,6 +232,11 @@ public sealed class RepairService
         }
         foreach (var f in d.GameCompatibilityFindings.Where(f => f.Severity == Severity.Error).Take(15))
             d.LikelyCauses.Add($"Incompatible with installed game: {f.Message}{(f.FilePath != null ? $" ({f.FilePath}{(f.Line != null ? ":" + f.Line : "")})" : "")}");
+        foreach (var f in (d.Analysis?.Findings ?? new()).Where(f => f.Severity == Severity.Error).Take(10))
+            d.LikelyCauses.Add($"Problem in the mod itself: {f.Message}{(f.FilePath != null ? $" ({f.FilePath}{(f.Line != null ? ":" + f.Line : "")})" : "")}");
+        var warnings = d.GameCompatibilityFindings.Count(f => f.Severity == Severity.Warning);
+        if (warnings > 0)
+            d.LikelyCauses.Add($"{warnings} warning(s) against the installed game (for example an XPath that matches nothing, or a Harmony target that was not found). These often mean a patch silently does nothing in game: see GAME COMPATIBILITY below.");
         foreach (var g in d.RelevantGroups.Take(10))
         {
             var e = g.First;
@@ -247,10 +264,32 @@ public sealed class RepairService
         sb.AppendLine(new string('=', 60));
         if (d.Analysis != null) sb.AppendLine(d.Analysis.Summary());
         sb.AppendLine();
+        var own = (d.Analysis?.Findings ?? new()).Where(f => f.Severity >= Severity.Warning).ToList();
+        if (own.Count > 0)
+        {
+            sb.AppendLine("MOD ANALYSIS FINDINGS");
+            foreach (var f in own.OrderByDescending(f => f.Severity).Take(40))
+                sb.AppendLine($"  [{f.Severity}] {f.Message}{(f.FilePath != null && !f.Message.Contains(f.FilePath) ? $" ({f.FilePath}{(f.Line != null ? ":" + f.Line : "")})" : "")}");
+            if (own.Count > 40) sb.AppendLine($"  … and {own.Count - 40} more.");
+            sb.AppendLine();
+        }
         if (d.LikelyCauses.Count > 0)
         {
             sb.AppendLine("LIKELY CAUSES");
             foreach (var c in d.LikelyCauses) sb.AppendLine("  • " + c);
+            sb.AppendLine();
+        }
+        if (d.CheckedAgainst != null)
+        {
+            var errs = d.GameCompatibilityFindings.Where(f => f.Severity == Severity.Error).ToList();
+            var warns = d.GameCompatibilityFindings.Where(f => f.Severity == Severity.Warning).ToList();
+            sb.AppendLine($"GAME COMPATIBILITY — checked against {d.CheckedAgainst}: {errs.Count} error(s), {warns.Count} warning(s)");
+            foreach (var c in d.ChecksRun) sb.AppendLine("  ✓ " + c);
+            foreach (var f in errs.Concat(warns).Take(60))
+                sb.AppendLine($"  [{f.Severity}] {f.Message}{(f.FilePath != null ? $" ({f.FilePath}{(f.Line != null ? ":" + f.Line : "")})" : "")}");
+            if (errs.Count + warns.Count > 60) sb.AppendLine($"  … and {errs.Count + warns.Count - 60} more.");
+            if (errs.Count + warns.Count == 0)
+                sb.AppendLine("  Nothing found. These checks are static: they cannot detect problems that only occur while the game runs. Add the game's client/server log (and a last working version, if you have one) for a deeper diagnosis.");
             sb.AppendLine();
         }
         if (d.Comparison != null)
