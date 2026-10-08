@@ -14,7 +14,8 @@ public sealed class LocalizationValidator : ValidatorBase
     protected override void Validate(ValidationContext ctx, List<ValidationFinding> findings, CancellationToken ct)
     {
         var files = ModFiles(ctx).ToList();
-        var locFiles = files.Where(f => Path.GetFileName(f).StartsWith("Localization", StringComparison.OrdinalIgnoreCase) && f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)).ToList();
+        var locFiles = files.Where(f => Path.GetFileName(f).StartsWith("Localization", StringComparison.OrdinalIgnoreCase)
+            && (f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))).ToList();
         var modKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var loc in locFiles)
         {
@@ -30,15 +31,22 @@ public sealed class LocalizationValidator : ValidatorBase
             if (!header.Any(h => h.Trim().Equals("english", StringComparison.OrdinalIgnoreCase)))
                 findings.Add(F(Severity.Warning, "Localization header has no 'english' column.", loc, 1));
             var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var duplicates = new List<(string Key, int Line, int First)>();
+            var wide = new List<int>();
             foreach (var row in LocalizationFile.ReadRows(full))
             {
-                if (seen.TryGetValue(row.Key, out var first))
-                    findings.Add(F(Severity.Warning, $"Duplicate localization key '{row.Key}' (first defined on line {first}).", loc, row.Line));
+                if (seen.TryGetValue(row.Key, out var first)) duplicates.Add((row.Key, row.Line, first));
                 else seen[row.Key] = row.Line;
-                if (row.ColumnCount > header.Count)
-                    findings.Add(F(Severity.Warning, $"Row has {row.ColumnCount} columns but the header has {header.Count}; check for unquoted commas.", loc, row.Line));
+                if (row.ColumnCount > header.Count) wide.Add(row.Line);
                 modKeys.Add(row.Key);
             }
+            // Summarised per file: large mods otherwise produce hundreds of near-identical findings.
+            foreach (var (key, line, first) in duplicates.Take(5))
+                findings.Add(F(Severity.Warning, $"Duplicate localization key '{key}' (first defined on line {first}); the game logs 'Duplicate key' and keeps only one.", loc, line));
+            if (duplicates.Count > 5)
+                findings.Add(F(Severity.Warning, $"{duplicates.Count - 5} more duplicate localization keys in this file.", loc));
+            if (wide.Count > 0)
+                findings.Add(F(Severity.Warning, $"{wide.Count} row(s) have more columns than the header ({header.Count}), first at line {wide[0]}. Text containing a comma must be wrapped in double quotes, otherwise everything after the comma lands in the wrong column.", loc, wide[0]));
         }
 
         // New items/blocks added by the mod should have display names.

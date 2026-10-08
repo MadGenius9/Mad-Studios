@@ -52,6 +52,8 @@ public sealed partial class XmlPatchTargetValidator : ValidatorBase
             var relInConfig = Path.GetRelativePath(configDir, file).Replace('\\', '/');
             var relInMod = "Config/" + relInConfig;
             if (relInConfig.StartsWith("Localization", StringComparison.OrdinalIgnoreCase)) continue;
+            // Legacy Config/XUi files on a split-XUi game are explained (with the fix) by GameLayoutCompatibilityValidator.
+            if (relInConfig.StartsWith("XUi/", StringComparison.OrdinalIgnoreCase) && GameLayoutCompatibilityValidator.GameUsesSplitXui(gameConfig)) continue;
 
             XDocument modDoc;
             try { modDoc = XDocument.Load(file, LoadOptions.SetLineInfo); }

@@ -268,10 +268,13 @@ public static class ModConflictAnalyzer
         var rows = new List<(string Mod, string Key, string? English)>();
         foreach (var m in mods)
         {
-            var path = Path.Combine(m.FolderPath, "Config", "Localization.txt");
-            if (!File.Exists(path)) continue;
-            try { rows.AddRange(LocalizationFile.ReadRows(path).Select(r => (Folder(m), r.Key, r.English))); }
-            catch (IOException) { }
+            foreach (var name in new[] { "Localization.txt", "Localization.csv" })
+            {
+                var path = Path.Combine(m.FolderPath, "Config", name);
+                if (!File.Exists(path)) continue;
+                try { rows.AddRange(LocalizationFile.ReadRows(path).Select(r => (Folder(m), r.Key, r.English))); }
+                catch (IOException) { }
+            }
         }
         var clashes = rows.GroupBy(r => r.Key, StringComparer.Ordinal)
             .Select(g => g.GroupBy(r => r.Mod).Select(x => x.Last()).ToList())

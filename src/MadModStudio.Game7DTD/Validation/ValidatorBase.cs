@@ -27,6 +27,10 @@ public abstract class ValidatorBase : IModValidator
     protected ValidationFinding F(Severity s, string message, string? file = null, int? line = null, string? evidence = null) =>
         new(Id, s, message, file, line, evidence);
 
+    /// <summary>Major game version from a profile's version text such as "V 3.30 (b18)", or null if unknown.</summary>
+    protected static int? GameMajorVersion(GameProfile? profile) =>
+        profile?.GameVersion is { } v && System.Text.RegularExpressions.Regex.Match(v, @"(\d+)\.\d+") is { Success: true } m ? int.Parse(m.Groups[1].Value) : null;
+
     protected static IEnumerable<string> ModFiles(ValidationContext ctx) =>
         FileUtil.EnumerateRelativeFiles(ctx.ModRootPath, new FileExclusionRules { IncludeSource = true, IncludePdb = true });
 }

@@ -80,7 +80,8 @@ public sealed class ModAnalyzer
                         report.Findings.Add(new ValidationFinding("analysis", asm.ReadError?.StartsWith("Not a managed") == true ? Severity.Info : Severity.Warning,
                             $"{rel}: {asm.ReadError}", rel));
                     break;
-                case ".txt" when name.StartsWith("Localization", StringComparison.OrdinalIgnoreCase):
+                // Localization.txt before V3.0, Localization.csv since.
+                case ".txt" or ".csv" when name.StartsWith("Localization", StringComparison.OrdinalIgnoreCase):
                     report.LocalizationFiles.Add(rel);
                     break;
                 case ".cs" or ".csproj" or ".sln":
