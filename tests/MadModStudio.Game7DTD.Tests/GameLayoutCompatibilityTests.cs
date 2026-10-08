@@ -108,6 +108,21 @@ public class GameLayoutCompatibilityTests
     }
 
     [Fact]
+    public async Task ModInfo_as_the_root_element_loads_fine_on_v3()
+    {
+        // Root <ModInfo> with fields directly under it: the game's V2 parser reads it (no nested <ModInfo> element).
+        using var host = new TestHost();
+        var v3 = Path.Combine(FakeGame.TempDir("v3ver"), "g");
+        FakeGame.Create(v3, FakeGame.AssemblyCSharpSource.Replace("EGameReleaseType.V, 2, 1, 7", "EGameReleaseType.V, 3, 30, 18"));
+        var mod = LegacyMod();
+        File.WriteAllText(Path.Combine(mod, "ModInfo.xml"), """<?xml version="1.0"?><ModInfo><Name value="OldMod"/><DisplayName value="Old"/><Version value="1.0"/><Author value="a"/></ModInfo>""");
+
+        var d = await Diagnose(host, v3, mod);
+
+        Assert.DoesNotContain(d.GameCompatibilityFindings, f => f.ValidatorId == "modinfo" && f.Severity >= Severity.Warning);
+    }
+
+    [Fact]
     public async Task Legacy_modinfo_is_only_a_warning_on_an_older_game()
     {
         using var host = new TestHost();

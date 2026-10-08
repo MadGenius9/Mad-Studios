@@ -32,9 +32,14 @@ public sealed class ModInfoValidator : ValidatorBase
             findings.Add(F(Severity.Error, "ModInfo.xml contains no recognised fields (expected Name, Version, ... elements with value attributes).", ModInfoFile.FileName));
             return;
         }
-        if (info.Format == ModInfoFormat.V1)
+        // The game's rule (V3.30 Mod.LoadDefinitionFromFolder): root.Element("ModInfo") != null → parseModInfoV1, which logs
+        // and returns null. Only a <ModInfo> element *inside* the root is legacy; a file whose root element is itself
+        // <ModInfo> (fields directly under it) goes through the normal V2 parser and loads fine.
+        var nestedModInfo = System.Xml.Linq.XDocument.Load(path).Root?.Element("ModInfo") != null;
+        if (info.Format == ModInfoFormat.V1 && !nestedModInfo)
+            findings.Add(F(Severity.Info, "ModInfo.xml uses <ModInfo> as its root element instead of <xml>. The game accepts this (it reads the fields directly under the root), but <xml> is the standard layout.", ModInfoFile.FileName));
+        else if (info.Format == ModInfoFormat.V1)
         {
-            // Verified in the V3.30 mod loader: a <ModInfo> element routes to parseModInfoV1, which logs and returns null.
             if (GameMajorVersion(ctx.GameProfile) >= 3)
                 findings.Add(F(Severity.Error, "ModInfo.xml uses the legacy V1 layout (a <ModInfo> wrapper). This game version refuses to load the mod; its log shows \"ModInfo.xml in legacy format. V2 required to load mod\". " +
                     "Fix: remove the <ModInfo> element and put Name, DisplayName, Version, Description, Author and Website directly under <xml>.", ModInfoFile.FileName));

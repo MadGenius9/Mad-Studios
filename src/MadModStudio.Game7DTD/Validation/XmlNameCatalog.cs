@@ -14,6 +14,7 @@ public static class XmlNameCatalog
     public static readonly (string File, string Element)[] Definitions =
     {
         ("items.xml", "item"), ("blocks.xml", "block"), ("item_modifiers.xml", "item_modifier"), ("loot.xml", "lootgroup"),
+        ("traders.xml", "trader_item_group"),
     };
 
     private sealed record Entry(long Length, DateTime Written, IReadOnlyDictionary<string, HashSet<string>> Names);

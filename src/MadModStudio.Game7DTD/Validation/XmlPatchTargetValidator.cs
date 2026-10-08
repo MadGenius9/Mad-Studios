@@ -46,6 +46,10 @@ public sealed partial class XmlPatchTargetValidator : ValidatorBase
         }
 
         var cache = new Dictionary<string, XDocument?>(StringComparer.OrdinalIgnoreCase);
+        var others = new Lazy<IReadOnlyList<string>>(() => OtherModRoots(ctx));
+        var otherNames = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> OtherNames(string root, string rel) =>
+            otherNames.TryGetValue(root + "|" + rel, out var s) ? s : otherNames[root + "|" + rel] = NamesIn(root, rel);
         // name attribute values per game file, keyed case-insensitively, for "did you mean" hints (this run only).
         var namesByFile = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in modXml)
@@ -105,6 +109,18 @@ public sealed partial class XmlPatchTargetValidator : ValidatorBase
                 var literals = Literal().Matches(xpath).Select(m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value).ToList();
                 if (literals.Any(ownNames.Contains))
                     findings.Add(F(Severity.Info, $"XPath matches nothing in the base game but appears to target content this mod adds itself: {xpath}", relInMod, line));
+                else if (others.Value.FirstOrDefault(o => literals.Any(OtherNames(o, relInConfig).Contains)) is { } provider)
+                {
+                    // Content another mod adds: the patch only works if that mod is applied first.
+                    var mod = Path.GetFileName(provider);
+                    var self = Path.GetFileName(ctx.ModRootPath);
+                    if (WontLoadReason(provider, ctx.GameProfile) is { } why)
+                        findings.Add(F(Severity.Warning, $"This <{op.Name.LocalName}> targets content added by mod '{mod}', but the game won't load '{mod}' because {why}, so the patch does nothing: {xpath}", relInMod, line, xpath));
+                    else if (LoadsBefore(provider, ctx.ModRootPath) == false)
+                        findings.Add(F(Severity.Warning, $"Load order: this <{op.Name.LocalName}> targets content added by mod '{mod}', but '{mod}' loads after '{self}' (the game loads mods in alphabetical folder order), so the target doesn't exist yet and the patch does nothing. Rename this mod's folder so it sorts after '{mod}' (for example with a 'z' prefix): {xpath}", relInMod, line, xpath));
+                    else
+                        findings.Add(F(Severity.Info, $"XPath targets content added by mod '{mod}'; it only applies when that mod is installed and loads first: {xpath}", relInMod, line));
+                }
                 else
                 {
                     unmatched++;
@@ -114,6 +130,14 @@ public sealed partial class XmlPatchTargetValidator : ValidatorBase
             }
             if (unmatched > 50) findings.Add(F(Severity.Warning, $"{unmatched - 50} more unmatched XPath operations in this file.", relInMod));
         }
+    }
+
+    /// <summary>Every name defined in another mod's copy of the same config file (cached by <see cref="XmlNameCatalog"/>).</summary>
+    private static HashSet<string> NamesIn(string modRoot, string relInConfig)
+    {
+        var all = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var set in XmlNameCatalog.Read(Path.Combine(modRoot, "Config", relInConfig.Replace('/', Path.DirectorySeparatorChar))).Values) all.UnionWith(set);
+        return all;
     }
 
     /// <summary>Why an XPath that matches nothing probably fails: the common modder mistakes, checked against the game file.</summary>
