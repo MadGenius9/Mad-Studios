@@ -46,6 +46,8 @@ public sealed partial class XmlPatchTargetValidator : ValidatorBase
         }
 
         var cache = new Dictionary<string, XDocument?>(StringComparer.OrdinalIgnoreCase);
+        // name attribute values per game file, keyed case-insensitively, for "did you mean" hints (this run only).
+        var namesByFile = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in modXml)
         {
             ct.ThrowIfCancellationRequested();
@@ -94,7 +96,9 @@ public sealed partial class XmlPatchTargetValidator : ValidatorBase
                 }
                 catch (XPathException ex)
                 {
-                    findings.Add(F(Severity.Error, $"Invalid XPath expression in <{op.Name.LocalName}>: {ex.Message}", relInMod, line, xpath));
+                    var v2 = xpath.Contains("ends-with(") || xpath.Contains("matches(") || xpath.Contains("lower-case(")
+                        ? " The game uses XPath 1.0: ends-with(), matches() and lower-case() are not available (use contains() or starts-with())." : "";
+                    findings.Add(F(Severity.Error, $"Invalid XPath expression in <{op.Name.LocalName}>: {ex.Message}{v2}", relInMod, line, xpath));
                     continue;
                 }
                 if (matches > 0) continue;
@@ -105,10 +109,43 @@ public sealed partial class XmlPatchTargetValidator : ValidatorBase
                 {
                     unmatched++;
                     if (unmatched <= 50)
-                        findings.Add(F(Severity.Warning, $"XPath matches nothing in the installed game's {relInConfig}; this <{op.Name.LocalName}> will not apply (it may target content from another mod): {xpath}", relInMod, line, xpath));
+                        findings.Add(F(Severity.Warning, $"XPath matches nothing in the installed game's {relInConfig}; this <{op.Name.LocalName}> will not apply (it may target content from another mod): {xpath}{Hint(op, xpath, literals, gameDoc, gamePath, namesByFile)}", relInMod, line, xpath));
                 }
             }
             if (unmatched > 50) findings.Add(F(Severity.Warning, $"{unmatched - 50} more unmatched XPath operations in this file.", relInMod));
         }
+    }
+
+    /// <summary>Why an XPath that matches nothing probably fails: the common modder mistakes, checked against the game file.</summary>
+    private static string Hint(XElement op, string xpath, List<string> literals, XDocument gameDoc, string gamePath,
+        Dictionary<string, Dictionary<string, string>> namesByFile)
+    {
+        // <set> on an attribute the element doesn't have: set only changes existing attributes.
+        var at = xpath.LastIndexOf("/@", StringComparison.Ordinal);
+        if (op.Name.LocalName.Equals("set", StringComparison.OrdinalIgnoreCase) && at > 0 && xpath.IndexOf('/', at + 2) < 0)
+        {
+            var parent = xpath[..at];
+            var attr = xpath[(at + 2)..];
+            try
+            {
+                if (gameDoc.XPathSelectElements(parent).Any())
+                    return $" The element exists but has no '{attr}' attribute: <set> only changes existing attributes. Use <setattribute xpath=\"{parent}\" name=\"{attr}\">value</setattribute> to add it.";
+            }
+            catch (XPathException) { }
+        }
+        // A name that only differs in case.
+        if (!namesByFile.TryGetValue(gamePath, out var names))
+        {
+            names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in gameDoc.Descendants())
+                if (e.Attribute("name")?.Value is { Length: > 0 } n) names.TryAdd(n, n);
+            namesByFile[gamePath] = names;
+        }
+        foreach (var lit in literals)
+            if (names.TryGetValue(lit, out var actual) && actual != lit)
+                return $" XPath is case-sensitive: the game names it '{actual}', not '{lit}'.";
+        if (!xpath.StartsWith('/'))
+            return " XPaths should start with '/' (the document root), e.g. /items/item[@name='...'].";
+        return "";
     }
 }

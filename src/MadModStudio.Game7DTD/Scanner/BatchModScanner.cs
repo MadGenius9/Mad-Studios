@@ -58,6 +58,8 @@ public sealed class BatchModScanner
                 var analysis = await Task.Run(() => _analyzer.Analyze(root, root, index, profile), ct).ConfigureAwait(false);
                 var ctx = new ValidationContext { ModRootPath = root, GameProfile = profile, GameIndex = index };
                 ctx.Items[HarmonyTargetValidator.SourcePatchesKey] = analysis.HarmonyPatches.Where(p => p.Origin == "Source").ToList();
+                // The other mods in the scanned folder are installed alongside this one, so their definitions count.
+                ctx.Items[XmlReferenceValidator.OtherModRootsKey] = roots;
                 var validation = await new ValidationRunner(validators).RunAsync(ctx, ct).ConfigureAwait(false);
                 var status = validation.HasErrors ? ScanStatus.Broken
                     : analysis.Side.Result == SideRequirement.ClientRequired ? ScanStatus.ClientRequirementDetected
