@@ -13,7 +13,7 @@
                 <TextBlock Text="Game Profiles" Style="{StaticResource H1}" />
                 <Button Content="Add 7 Days to Die Installation" Style="{StaticResource AccentButton}" Command="{Binding AddInstallationCommand}" Margin="0,0,0,8" HorizontalAlignment="Left" />
                 <Button Content="Add from ZIP..." Command="{Binding AddInstallationFromZipCommand}" Margin="0,0,0,12" HorizontalAlignment="Left"
-                        ToolTip="Extract a ZIP of the game or a dedicated server into Mad Mod Studio's data folder and use it as a profile." />
+                        ToolTip="Extract ZIP(s) of the game's DLLs and config files (select them together with Ctrl+click) into Mad Mod Studio's data folder and use them as a profile." />
             </StackPanel>
             <ListBox ItemsSource="{Binding ValidationMessages}" DockPanel.Dock="Bottom" Height="150" Margin="0,10,0,0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      Visibility="{Binding ValidationMessages.Count, Converter={StaticResource NullToVis}}">

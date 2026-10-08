@@ -90,6 +90,49 @@ public class GameProfileZipTests
     }
 
     [Fact]
+    public async Task Separate_managed_and_config_zips_combine_into_one_profile()
+    {
+        using var host = new TestHost();
+        var svc = host.Get<GameProfileService>();
+        var game = Path.Combine(FakeGame.TempDir("zipgame"), "g");
+        FakeGame.Create(game);
+        var out1 = FakeGame.TempDir("zipout");
+
+        // Managed.zip -> Managed/*.dll
+        var s1 = FakeGame.TempDir("s1");
+        Directory.CreateDirectory(Path.Combine(s1, "Managed"));
+        foreach (var f in Directory.GetFiles(FakeGame.ManagedPath(game))) File.Copy(f, Path.Combine(s1, "Managed", Path.GetFileName(f)));
+        var managedZip = Path.Combine(out1, "Managed.zip");
+        ZipFile.CreateFromDirectory(s1, managedZip);
+
+        // Config.zip -> Config/*.xml, XUi_*/ folders and Localization.csv (as shipped in the user's real archive)
+        var s2 = FakeGame.TempDir("s2");
+        var cfg = Path.Combine(s2, "Config");
+        Directory.CreateDirectory(Path.Combine(cfg, "XUi_Menu"));
+        var src = Path.Combine(game, "Data", "Config");
+        foreach (var f in Directory.GetFiles(src)) File.Copy(f, Path.Combine(cfg, Path.GetFileName(f) == "Localization.txt" ? "Localization.csv" : Path.GetFileName(f)));
+        File.Copy(Path.Combine(src, "XUi", "windows.xml"), Path.Combine(cfg, "XUi_Menu", "windows.xml"));
+        var configZip = Path.Combine(out1, "Config.zip");
+        ZipFile.CreateFromDirectory(s2, configZip);
+
+        // Config alone is not an install, and says what is missing.
+        var configOnly = await svc.CreateProfileFromZipAsync(configZip);
+        Assert.Null(configOnly.Profile);
+        Assert.Contains(configOnly.Validation.Errors, e => e.Contains("Assembly-CSharp.dll") && e.Contains("select all of them together"));
+        Assert.Empty(Directory.GetDirectories(host.Paths.GameInstalls));
+
+        var result = await svc.CreateProfileFromZipsAsync(new[] { managedZip, configZip });
+
+        Assert.True(result.Profile != null, string.Join("; ", result.Validation.Errors));
+        var index = await svc.ReindexAsync(result.Profile!);
+        Assert.True(index.Success, index.Error);
+        var idx = svc.GetIndex(result.Profile!)!;
+        Assert.NotNull(idx.GetType("EntityDrone"));
+        Assert.Contains(idx.SearchXml("cntWoodWritableCrate"), x => x.File == "blocks.xml");
+        Assert.True(idx.LocalizationKeyExists("resourceWood")); // read from Localization.csv
+    }
+
+    [Fact]
     public async Task Zip_without_a_game_reports_an_error_and_leaves_nothing_behind()
     {
         using var host = new TestHost();
