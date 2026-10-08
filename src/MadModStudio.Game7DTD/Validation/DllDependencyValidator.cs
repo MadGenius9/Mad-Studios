@@ -54,6 +54,12 @@ public sealed class DllDependencyValidator : ValidatorBase
                     findings.Add(F(Severity.Info, $"Reference '{r.Name}' not checked (no Game Profile).", d));
                     continue;
                 }
+                if (r.Name == "0Harmony")
+                {
+                    // The game ships Harmony itself (Mods/0_TFP_Harmony); a profile without that folder (e.g. from a ZIP) just can't see it.
+                    findings.Add(F(Severity.Info, $"References 0Harmony {r.Version}, which the game ships in Mods/0_TFP_Harmony; that folder is not part of this Game Profile, so the version was not compared.", d));
+                    continue;
+                }
                 if (otherMods.TryGetValue(r.Name, out var modPath))
                 {
                     findings.Add(F(Severity.Info, $"Depends on '{r.Name}', provided by another installed mod ({modPath}). That mod must be installed too.", d));

@@ -55,6 +55,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModValidator, FolderStructureValidator>();
         services.AddSingleton<IModValidator, XmlWellFormedValidator>();
         services.AddSingleton<IModValidator, XmlPatchTargetValidator>();
+        services.AddSingleton<IModValidator, GameLayoutCompatibilityValidator>();
         services.AddSingleton<IModValidator, DuplicateFileValidator>();
         services.AddSingleton<IModValidator, LocalizationValidator>();
         services.AddSingleton<IModValidator, DllDependencyValidator>();

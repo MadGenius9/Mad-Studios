@@ -50,16 +50,19 @@ public sealed class RepairService
     private readonly LogParser _logParser;
     private readonly VersionComparer _comparer;
     private readonly GameProfileService _profiles;
-    private readonly AssemblyInspector _inspector;
+    private readonly IReadOnlyList<IModValidator> _checks;
     private readonly Core.AppPaths _paths;
 
-    public RepairService(ModAnalyzer analyzer, LogParser logParser, VersionComparer comparer, GameProfileService profiles, AssemblyInspector inspector, Core.AppPaths paths)
+    // Validators that need a build or a package to look at; everything else is a static check a diagnosis can run.
+    private static readonly string[] NeedsBuildOrPackage = { "compiler", "package" };
+
+    public RepairService(ModAnalyzer analyzer, LogParser logParser, VersionComparer comparer, GameProfileService profiles, IEnumerable<IModValidator> validators, Core.AppPaths paths)
     {
         _analyzer = analyzer;
         _logParser = logParser;
         _comparer = comparer;
         _profiles = profiles;
-        _inspector = inspector;
+        _checks = validators.Where(v => !NeedsBuildOrPackage.Contains(v.Id)).ToList();
         _paths = paths;
     }
 
@@ -95,17 +98,10 @@ public sealed class RepairService
         {
             var ctx = new ValidationContext { ModRootPath = project.ModRootPath, Project = project, GameProfile = profile, GameIndex = index };
             ctx.Items[HarmonyTargetValidator.SourcePatchesKey] = d.Analysis.HarmonyPatches.Where(p => p.Origin == "Source").ToList();
-            var checks = new IModValidator[] { new HarmonyTargetValidator(_inspector), new GameApiReferenceValidator(_inspector), new XmlPatchTargetValidator(), new XmlWellFormedValidator() };
-            var vr = await new ValidationRunner(checks).RunAsync(ctx, ct).ConfigureAwait(false);
+            var vr = await new ValidationRunner(_checks).RunAsync(ctx, ct).ConfigureAwait(false);
             d.GameCompatibilityFindings.AddRange(vr.Findings.Where(f => f.Severity >= Severity.Warning));
             d.CheckedAgainst = profile?.Name;
-            d.ChecksRun.AddRange(new[]
-            {
-                "Harmony patch targets exist in the game's DLLs",
-                "game types/methods/fields used by mod DLLs still exist",
-                "XML patch XPaths match something in the game's config XML",
-                "mod XML files are well-formed",
-            });
+            d.ChecksRun.AddRange(_checks.Where(c => vr.ValidatorsRun.Contains(c.Id)).Select(c => c.DisplayName));
         }
         else d.LikelyCauses.Add("No indexed Game Profile: the mod could not be compared against the installed game's API and XML. Assign and index a Game Profile for a full diagnosis.");
 

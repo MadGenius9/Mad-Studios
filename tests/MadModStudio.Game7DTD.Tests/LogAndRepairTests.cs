@@ -160,7 +160,7 @@ public class LogAndRepairTests
 
         Assert.Contains("checked against " + profile.Name, d.Report);
         Assert.Contains("0 error(s), 0 warning(s)", d.Report);
-        Assert.Contains("XML patch XPaths match something", d.Report);
+        Assert.Contains("XML patch targets (XPath)", d.Report);
         Assert.Contains("cannot detect problems that only occur while the game runs", d.Report);
     }
 
