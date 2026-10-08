@@ -104,6 +104,8 @@ public static class FakeGame
             }
             [AttributeUsage(AttributeTargets.Method)] public class HarmonyPrefix : HarmonyAttribute { }
             [AttributeUsage(AttributeTargets.Method)] public class HarmonyPostfix : HarmonyAttribute { }
+            [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Method, AllowMultiple = true)]
+            public class HarmonyArgument : Attribute { public HarmonyArgument(string originalName) { } public HarmonyArgument(int index) { } }
         }
         """;
 

@@ -358,7 +358,7 @@ public sealed class AssemblyInspector
             classArgs.Add(DecodeHarmonyArgs(attr, reader));
         }
 
-        var patchMethods = new List<(string Name, string Kind, List<HarmonyAttributeArgs> Args, bool Dynamic)>();
+        var patchMethods = new List<(string Name, string Kind, List<HarmonyAttributeArgs> Args, bool Dynamic, List<string>? Params)>();
         var hasTargetMethod = false;
         foreach (var mh in td.GetMethods())
         {
@@ -377,7 +377,7 @@ public sealed class AssemblyInspector
             if (name is "TargetMethod" or "TargetMethods") hasTargetMethod = true;
             var kind = HarmonyPatchMerger.KindFromMethod(name, attrNames);
             if (kind != "Unknown" || methodArgs.Count > 0)
-                patchMethods.Add((name, kind, methodArgs, false));
+                patchMethods.Add((name, kind, methodArgs, false, attrNames.Any(HarmonyPatchMerger.IsHarmonyArgumentAttribute) ? null : PatchParameterNames(m, reader)));
         }
 
         if (classArgs.Count == 0 && !patchMethods.Any(p => p.Args.Count > 0)) return;
@@ -396,6 +396,7 @@ public sealed class AssemblyInspector
                 ArgumentTypes = args,
                 Origin = "Metadata",
                 IsDynamicTarget = hasTargetMethod && t is null,
+                PatchParameterNames = pm.Params,
             });
         }
         if (patchMethods.Count == 0)
@@ -412,6 +413,22 @@ public sealed class AssemblyInspector
                 IsDynamicTarget = hasTargetMethod && t is null,
             });
         }
+    }
+
+    /// <summary>Names of the method's parameters that Harmony resolves by name (those without [HarmonyArgument]).</summary>
+    private static List<string>? PatchParameterNames(MethodDefinition m, MetadataReader reader)
+    {
+        var names = new List<string>();
+        foreach (var ph in m.GetParameters())
+        {
+            var par = reader.GetParameter(ph);
+            if (par.SequenceNumber == 0) continue; // return value
+            var name = reader.GetString(par.Name);
+            if (string.IsNullOrEmpty(name)) return null; // stripped names: can't tell
+            var remapped = par.GetCustomAttributes().Any(a => HarmonyPatchMerger.IsHarmonyArgumentAttribute(MetadataNames.AttributeTypeName(reader, reader.GetCustomAttribute(a))));
+            if (!remapped) names.Add(name);
+        }
+        return names;
     }
 
     private static HarmonyAttributeArgs DecodeHarmonyArgs(CustomAttribute attr, MetadataReader reader)

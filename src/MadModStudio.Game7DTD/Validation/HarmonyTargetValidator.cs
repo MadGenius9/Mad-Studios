@@ -93,6 +93,90 @@ public sealed class HarmonyTargetValidator : ValidatorBase
         }
         if (p.ArgumentTypes is null && methods.Count > 1 && methods.Select(m => m.ParameterCount).Distinct().Count() > 1)
             findings.Add(F(Severity.Warning, $"{where}: '{type.FullName}.{memberName}' has {methods.Count} overloads; without argument types Harmony throws an ambiguous match error.", p.File, p.Line));
+
+        var candidates = p.ArgumentTypes is { } a ? methods.Where(m => m.ParameterCount == a.Count).ToList() : methods;
+        CheckParameters(p, where, type.FullName, memberName, candidates, index, findings);
+    }
+
+    /// <summary>Harmony's own injected parameter names (https://harmony.pardeike.net/articles/patching-injections.html).</summary>
+    private static readonly HashSet<string> Injections = new(StringComparer.Ordinal)
+    {
+        "__instance", "__result", "__resultRef", "__state", "__args", "__originalMethod", "__runOriginal", "__exception",
+    };
+
+    /// <summary>
+    /// Harmony resolves Prefix/Postfix/Finalizer parameters by name: injections (__instance, ___field, __n, ...) or the
+    /// original method's parameter names. A name it can't resolve makes applying the patch fail, which is a common way
+    /// patches break after a game update renames a parameter or field.
+    /// </summary>
+    private void CheckParameters(HarmonyPatchInfo p, string where, string type, string member, List<IndexedMember> candidates,
+        IGameKnowledgeIndex index, List<ValidationFinding> findings)
+    {
+        if (p.PatchKind is not ("Prefix" or "Postfix" or "Finalizer") || p.PatchParameterNames is not { Count: > 0 } names || candidates.Count == 0) return;
+        var originals = candidates.Select(m => ParameterNames(m.Signature)).ToList();
+        if (originals.Any(o => o is null)) return; // some parameter names unknown: can't judge
+        var target = $"{type}.{member}";
+        foreach (var n in names)
+        {
+            if (n.StartsWith("___", StringComparison.Ordinal))
+            {
+                var field = n[3..];
+                if (!index.FindMemberInHierarchy(type, field).Any(m => m.Kind == "Field"))
+                {
+                    var similar = index.GetMembers(type).Where(m => m.Kind == "Field" && Similar(m.Name, field)).Select(m => m.Name).Distinct().Take(4).ToList();
+                    findings.Add(F(Severity.Error, $"{where}: parameter '{n}' asks Harmony for the field '{field}', but {type} has no such field in the installed game, so applying the patch fails.{(similar.Count > 0 ? " Similar fields: " + string.Join(", ", similar) : "")}", p.File, p.Line));
+                }
+            }
+            else if (Injections.Contains(n))
+            {
+                if (n == "__instance" && candidates.All(m => m.IsStatic))
+                    findings.Add(F(Severity.Error, $"{where}: '__instance' is only available when the patched method is not static, but {target} is static.", p.File, p.Line));
+                else if (n is "__result" or "__resultRef" && candidates.All(m => m.Kind == "Constructor" || m.ReturnType is null or "void" or "Void"))
+                    findings.Add(F(Severity.Error, $"{where}: '{n}' needs a return value, but {target} returns nothing (void).", p.File, p.Line));
+            }
+            else if (n.Length > 2 && n.StartsWith("__", StringComparison.Ordinal) && n[2..].All(char.IsDigit))
+            {
+                var i = int.Parse(n[2..]);
+                if (candidates.All(m => m.ParameterCount <= i))
+                    findings.Add(F(Severity.Error, $"{where}: '{n}' is argument index {i}, but {target} takes {candidates.Max(m => m.ParameterCount)} parameter(s).", p.File, p.Line));
+            }
+            else if (!originals.Any(o => o!.Contains(n)))
+            {
+                var injection = n.StartsWith("__", StringComparison.Ordinal)
+                    ? $" '{n}' is also not one of Harmony's injections ({string.Join(", ", Injections)}); they are case-sensitive." : "";
+                var available = originals.SelectMany(o => o!).Distinct().ToList();
+                findings.Add(F(Severity.Error, $"{where}: parameter '{n}' doesn't match any parameter of {target} in the installed game. Harmony matches patch parameters to the original by name, so applying this patch fails ('Parameter not found').{injection} " +
+                    (available.Count > 0 ? $"The game's parameter names are: {string.Join(", ", available)} (or use __0, __1, ... by position)." : $"{target} takes no parameters."), p.File, p.Line));
+            }
+        }
+    }
+
+    /// <summary>Parameter names from an indexed signature like "static bool Foo(int slot, Dictionary&lt;string, int&gt; map)"; null if any is unnamed.</summary>
+    public static List<string>? ParameterNames(string signature)
+    {
+        var open = signature.IndexOf('(');
+        var close = signature.LastIndexOf(')');
+        if (open < 0 || close < open) return null;
+        var inner = signature[(open + 1)..close];
+        var names = new List<string>();
+        if (string.IsNullOrWhiteSpace(inner)) return names;
+        int depth = 0, start = 0;
+        for (var i = 0; i <= inner.Length; i++)
+        {
+            if (i < inner.Length)
+            {
+                var c = inner[i];
+                if (c is '<' or '[' or '(') depth++;
+                else if (c is '>' or ']' or ')') depth--;
+                if (c != ',' || depth != 0) continue;
+            }
+            var part = inner[start..i].Trim();
+            start = i + 1;
+            var space = part.LastIndexOf(' ');
+            if (space < 0) return null; // type only, no name
+            names.Add(part[(space + 1)..]);
+        }
+        return names;
     }
 
     private static bool Similar(string a, string b)
