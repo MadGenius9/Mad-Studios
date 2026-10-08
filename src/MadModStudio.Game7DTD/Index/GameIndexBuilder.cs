@@ -253,7 +253,9 @@ public sealed class GameIndexBuilder
         insLoc.Transaction = tx;
         insLoc.CommandText = "INSERT INTO localization(key, file, english) VALUES ($k,$f,$e)";
         foreach (var n in new[] { "$k", "$f", "$e" }) insLoc.Parameters.Add(new SqliteParameter(n, null));
-        foreach (var loc in Directory.GetFiles(configPath, "Localization*.txt", SearchOption.AllDirectories))
+        // The game ships Localization.txt; some ZIPs of the config folder carry it as Localization.csv (same format).
+        foreach (var loc in Directory.GetFiles(configPath, "Localization*.txt", SearchOption.AllDirectories)
+                     .Concat(Directory.GetFiles(configPath, "Localization*.csv", SearchOption.AllDirectories)))
         {
             ct.ThrowIfCancellationRequested();
             progress?.Report(new IndexProgress($"Indexing localization: {Path.GetFileName(loc)}", 0, 0));

@@ -88,25 +88,36 @@ public sealed class GameProfileService
     /// Extracts a ZIP of the game (or a dedicated server) into Mad Mod Studio's own data folder, then creates a profile from it.
     /// The extracted copy is owned by the profile and removed with it. On any failure nothing is left behind.
     /// </summary>
-    public async Task<ProfileCreationResult> CreateProfileFromZipAsync(string zipPath, string? name = null, CancellationToken ct = default)
+    public Task<ProfileCreationResult> CreateProfileFromZipAsync(string zipPath, string? name = null, CancellationToken ct = default) =>
+        CreateProfileFromZipsAsync(new[] { zipPath }, name, ct);
+
+    /// <summary>
+    /// Like <see cref="CreateProfileFromZipAsync(string,string?,CancellationToken)"/> but takes several ZIPs that together
+    /// make up the install, e.g. one with the game's DLLs (Managed.zip) and one with its config XML files (Config.zip).
+    /// </summary>
+    public async Task<ProfileCreationResult> CreateProfileFromZipsAsync(IReadOnlyList<string> zipPaths, string? name = null, CancellationToken ct = default)
     {
         var dest = Path.Combine(_paths.GameInstalls, Guid.NewGuid().ToString("N"));
+        var label = string.Join(", ", zipPaths.Select(Path.GetFileName));
         try
         {
-            var extracted = await Task.Run(() => SafeZip.Extract(zipPath, dest, GameZipLimits), ct).ConfigureAwait(false);
-            // Standard layout first; otherwise accept a "DLLs + config files" ZIP laid out any which way.
+            var files = 0;
+            foreach (var zip in zipPaths)
+                files += (await Task.Run(() => SafeZip.Extract(zip, dest, GameZipLimits), ct).ConfigureAwait(false)).FilesExtracted;
+            // Standard layout first; otherwise accept "DLLs + config files" laid out any which way.
             var root = _locator.FindInstallRootBelow(dest) ?? NormalizeLooseLayout(dest);
             if (root is null)
             {
                 var none = new InstallValidation();
-                none.Errors.Add($"No 7 Days to Die installation was found in '{Path.GetFileName(zipPath)}' ({extracted.FilesExtracted:N0} files extracted). " +
-                                "The ZIP must contain the game's DLLs (including Assembly-CSharp.dll) and its config XML files (blocks.xml, items.xml, ...).");
+                none.Errors.Add($"No 7 Days to Die installation was found in {label} ({files:N0} files extracted): there is no Assembly-CSharp.dll. " +
+                                "A profile needs the game's DLLs (the Managed folder) and its config XML files (blocks.xml, items.xml, ...). " +
+                                "If they are in separate ZIPs, select all of them together (Ctrl+click).");
                 DeleteExtracted(dest);
                 return new ProfileCreationResult { Validation = none };
             }
             var result = await CreateProfileAsync(root, name, ct).ConfigureAwait(false);
             if (result.Profile is null) DeleteExtracted(dest);
-            else _log.LogInformation("Extracted {Zip} ({Files} files) to {Dest}", zipPath, extracted.FilesExtracted, dest);
+            else _log.LogInformation("Extracted {Zips} ({Files} files) to {Dest}", label, files, dest);
             return result;
         }
         catch (ZipSafetyException ex)

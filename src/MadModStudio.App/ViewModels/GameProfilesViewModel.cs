@@ -75,9 +75,9 @@ public sealed partial class GameProfilesViewModel : PageViewModel
     [RelayCommand]
     private Task AddInstallationFromZip() => RunAsync("Extracting ZIP and validating (a full game can take several minutes)...", async () =>
     {
-        var zip = _dialogs.PickFile("Select a ZIP of your 7 Days to Die installation or dedicated server", "Game archives (*.zip)|*.zip");
-        if (zip is null) return;
-        await FinishAddAsync(await _profiles.CreateProfileFromZipAsync(zip), "ZIP");
+        var zips = _dialogs.PickFiles("Select the ZIP(s) of your 7 Days to Die installation (Ctrl+click to pick the DLL and config ZIPs together)", "Game archives (*.zip)|*.zip");
+        if (zips.Count == 0) return;
+        await FinishAddAsync(await _profiles.CreateProfileFromZipsAsync(zips), "ZIP selection");
     });
 
     private async Task FinishAddAsync(ProfileCreationResult result, string source)
